@@ -61,7 +61,7 @@ pulso/
 
 ### Prerequisites
 
-- Go 1.25.7 or later
+- Go 1.26.11 or later
 - Make (optional, for build commands)
 
 ### Build

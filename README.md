@@ -33,7 +33,7 @@ Pulso manages your applications — Go, Python, Node.js/TypeScript, Bun, Deno, R
 
 ## Install
 
-Build from this source tree with Go 1.25.7 or newer:
+Build from this source tree with Go 1.26.11 or newer:
 
 ```bash
 make build

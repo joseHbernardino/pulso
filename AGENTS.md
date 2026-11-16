@@ -1,6 +1,6 @@
 # Pulso — Project Knowledge Base
 
-**Module:** `pulso.local/pulso` | **Go:** 1.25.7+ | **LOC:** ~13k across 90+ `.go` files
+**Module:** `pulso.local/pulso` | **Go:** 1.26.11+ | **LOC:** ~13k across 90+ `.go` files
 
 ## Overview
 

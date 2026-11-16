@@ -19,7 +19,11 @@ func TestPersistentWebRoles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	token, err := os.ReadFile(filepath.Join(dir, "setup-token"))
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +36,11 @@ func TestPersistentWebRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := setupTestServer(t)
-	defer base.supervisor.Shutdown()
+	defer func() {
+		if err := base.supervisor.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	}()
 	process, err := base.supervisor.AddProcess(context.Background(), types.ProcessConfig{Name: "rbac-app", Entrypoint: "sleep", Args: []string{"60"}, Env: map[string]string{"PRIVATE_KEY": "must-not-reach-viewer"}, RestartPolicy: types.RestartNever})
 	if err != nil {
 		t.Fatal(err)

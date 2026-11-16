@@ -16,7 +16,7 @@ vet:
 	$(GO) vet ./...
 
 lint: vet
-	@which golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || echo "golangci-lint not installed, skipping"
+	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; else echo "golangci-lint not installed"; exit 1; fi
 
 fmt:
 	gofmt -w .

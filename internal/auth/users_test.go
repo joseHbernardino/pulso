@@ -17,7 +17,11 @@ func bootstrapTestStore(t *testing.T) (*UserStore, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	token, err := os.ReadFile(store.setupFile)
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +38,11 @@ func TestUserStoreBootstrapProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	token, err := os.ReadFile(store.setupFile)
 	if err != nil {
 		t.Fatal(err)
@@ -86,12 +94,18 @@ func TestUserSessionsPersistAndRevoke(t *testing.T) {
 		t.Fatal("raw session token persisted")
 	}
 	sessions.Stop()
-	store.Close()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
 	reopened, err := OpenUserStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() {
+		if err := reopened.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	restored := NewPersistentSessionStore(reopened, time.Hour)
 	defer restored.Stop()
 	if current, ok := restored.ValidateSession(session.Token); !ok || current.Role != RoleView {

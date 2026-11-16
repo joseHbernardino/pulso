@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
   push:
     branches: [main]
     paths:
@@ -9,7 +12,9 @@ on:
       - "go.sum"
       - "flake.nix"
       - "flake.lock"
-      - ".github/workflows/ci.yml"
+      - ".github/**"
+      - "internal/web/frontend/**"
+      - "nix/**"
   pull_request:
     branches: [main]
     paths:
@@ -18,21 +23,24 @@ on:
       - "go.sum"
       - "flake.nix"
       - "flake.lock"
-      - ".github/workflows/ci.yml"
+      - ".github/**"
+      - "internal/web/frontend/**"
+      - "nix/**"
 
-env:
-  GO_VERSION: "1.25"
+permissions:
+  contents: read
 
 jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Verify dependencies
         run: go mod verify
@@ -50,9 +58,9 @@ jobs:
         run: go vet ./...
 
       - name: Lint
-        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.15.0
 
       - name: Test
         run: go test -v -count=1 -race -timeout 120s ./...
@@ -77,11 +85,12 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Build
         env:
@@ -99,11 +108,11 @@ jobs:
     name: Nix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: DeterminateSystems/nix-installer-action@21a544727d0c62386e78b4befe52d19ad12692e3 # v17
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
-      - uses: DeterminateSystems/magic-nix-cache-action@e1c1dae8e170ed20fd2e6aaf9979ca2d3905d636 # v12
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
 
       - name: Check flake
         run: nix flake check --all-systems
@@ -113,3 +122,17 @@ jobs:
 
       - name: Verify binary
         run: ./result/bin/pulso version
+
+  security:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install scanner
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: Scan application and tests
+        run: govulncheck -test ./...

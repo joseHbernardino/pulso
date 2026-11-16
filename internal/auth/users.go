@@ -64,10 +64,12 @@ func OpenUserStore(path string) (*UserStore, error) {
 		return nil, err
 	}
 	if err := file.Chmod(0o600); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
-	file.Close()
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("close accounts database file: %w", err)
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -89,17 +91,17 @@ CREATE TABLE IF NOT EXISTS web_sessions (
 CREATE INDEX IF NOT EXISTS web_sessions_expiry ON web_sessions(expires_at);
 CREATE TABLE IF NOT EXISTS auth_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("initialize accounts database: %w", err)
 	}
 	dummy, err := HashPassword("invalid-account-timing-placeholder")
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	store := &UserStore{db: db, setupFile: filepath.Join(filepath.Dir(path), "setup-token"), dummyHash: dummy}
 	if err := store.ensureSetupToken(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return store, nil
@@ -192,7 +194,7 @@ func (s *UserStore) Bootstrap(token, username, password string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var count int
 	if err := tx.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		return User{}, err
@@ -243,7 +245,7 @@ func (s *UserStore) ListUsers() ([]User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	users := []User{}
 	for rows.Next() {
 		var user User
@@ -301,7 +303,7 @@ func (s *UserStore) changeUser(id int64, change UserUpdate, remove bool) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var oldRole string
 	var oldDisabled bool
 	if err := tx.QueryRow("SELECT role,disabled FROM users WHERE id=?", id).Scan(&oldRole, &oldDisabled); err != nil {

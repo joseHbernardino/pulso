@@ -305,7 +305,10 @@ func TestDaemonIPCStartStop(t *testing.T) {
 	// Shutdown daemon.
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("daemon shutdown: %v", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("daemon didn't shut down")
 	}

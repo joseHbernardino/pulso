@@ -3,6 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Nixpkgs 26.11 removed Intel macOS; keep its supported security branch.
+    nixpkgs-intel.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -13,10 +15,17 @@
     {
       self,
       nixpkgs,
+      nixpkgs-intel,
       home-manager,
     }:
     let
       version = self.shortRev or (builtins.substring 0 8 self.lastModifiedDate);
+
+      pkgsFor = system:
+        if system == "x86_64-darwin" then
+          nixpkgs-intel.legacyPackages.${system}
+        else
+          nixpkgs.legacyPackages.${system};
 
       forEachSystem = nixpkgs.lib.genAttrs [
         "x86_64-linux"
@@ -28,15 +37,15 @@
     {
       packages = forEachSystem (system: rec {
         default = pulso;
-        pulso = nixpkgs.legacyPackages.${system}.callPackage ./nix/package.nix {
+        pulso = (pkgsFor system).callPackage ./nix/package.nix {
           inherit version;
           src = self;
         };
       });
 
       devShells = forEachSystem (system: {
-        default = nixpkgs.legacyPackages.${system}.mkShell {
-          packages = with nixpkgs.legacyPackages.${system}; [
+        default = (pkgsFor system).mkShell {
+          packages = with (pkgsFor system); [
             go
             gopls
             gotools
@@ -61,7 +70,7 @@
         pulso = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
 
-      formatter = forEachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+      formatter = forEachSystem (system: (pkgsFor system).nixfmt-tree);
 
       nixosModules.default = import ./nix/nixos-module.nix self;
       homeManagerModules.default = import ./nix/home-manager.nix self;

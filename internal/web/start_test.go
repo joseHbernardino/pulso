@@ -32,7 +32,11 @@ func TestWebStartValidation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := setupTestServer(t)
-			defer srv.supervisor.Shutdown()
+			defer func() {
+				if err := srv.supervisor.Shutdown(); err != nil {
+					t.Error(err)
+				}
+			}()
 			body, err := json.Marshal(tt.cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -66,7 +70,11 @@ time.sleep(60)
 		t.Fatal(err)
 	}
 	srv := setupTestServer(t)
-	defer srv.supervisor.Shutdown()
+	defer func() {
+		if err := srv.supervisor.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	}()
 	router := chi.NewRouter()
 	router.Post("/api/v1/processes", srv.handleStartProcess)
 	router.Get("/api/v1/processes", srv.handleListProcesses)
@@ -87,7 +95,7 @@ time.sleep(60)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -169,7 +177,11 @@ func TestPrepareWebProcessResolvesJavaScript(t *testing.T) {
 
 func TestWebStartIgnoresRequestCancellation(t *testing.T) {
 	srv := setupTestServer(t)
-	defer srv.supervisor.Shutdown()
+	defer func() {
+		if err := srv.supervisor.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/processes", strings.NewReader(`{"name":"long-lived","entrypoint":"sleep","args":["60"],"runtime":"process","restart_policy":"never"}`)).WithContext(ctx)
 	w := httptest.NewRecorder()

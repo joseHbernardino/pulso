@@ -131,7 +131,11 @@ func RunDaemon(socketPath string, dataDir string, cfg *types.PulsoConfig, config
 		col.Stop()
 		return fmt.Errorf("open web accounts: %w", err)
 	}
-	defer users.Close()
+	defer func() {
+		if err := users.Close(); err != nil {
+			log.Error().Err(err).Msg("close web accounts")
+		}
+	}()
 	srv.webUsers = users
 
 	log.Info().
