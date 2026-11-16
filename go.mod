@@ -16,7 +16,7 @@ require (
 	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
-	go.yaml.in/yaml/v3 v3.0.4
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.59.0
 	modernc.org/sqlite v1.59.0
 )
