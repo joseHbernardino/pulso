@@ -1,0 +1,37 @@
+# Binaries
+/pulso
+/bin/
+/dist/
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.txt
+
+# Dependency directories
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.exe
+
+# Pulso data
+state.json
+logs/
+pulso.yaml
+
+# Nix
+result
+result-*

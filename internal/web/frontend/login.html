@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulso - Sign In</title>
+    <meta name="theme-color" content="#123D43" />
+    <link rel="icon" type="image/svg+xml" href="/assets/pulso-mark.svg" />
+    <link rel="stylesheet" href="/assets/brand.css" />
+    <link rel="stylesheet" href="/assets/login.css" />
+    <style>[hidden]{display:none!important}.setup-help{font-size:12px;color:var(--text-muted);margin-top:9px;overflow-wrap:anywhere}</style>
+  </head>
+  <body>
+    <div class="login-layout">
+      <aside class="login-story" aria-label="About Pulso">
+        <a class="brand" href="/" aria-label="Pulso home"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
+        <div class="story-copy"><h2>Keep your apps<br />in rhythm.</h2><p>One place to follow your applications, understand their status and keep things moving.</p><div class="process-orbit" aria-hidden="true"><span class="orbit-node">●</span><span class="orbit-node central"><img src="/assets/pulso-mark.svg" alt="" /></span><span class="orbit-node">↻</span></div></div>
+        <p class="story-footer">Your applications. Your workspace.</p>
+      </aside>
+      <main class="login-main">
+      <div class="login-card">
+        <div class="login-header">
+          <a class="brand mobile-brand" href="/" aria-label="Pulso home"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
+          <h1>Welcome to Pulso</h1>
+          <p>Sign in to your application workspace.</p>
+        </div>
+
+        <form id="login-form" autocomplete="on">
+          <div class="form-group" id="setup-token-group" hidden>
+            <label for="setup-token">Código de configuração</label>
+            <div class="input-wrapper"><input type="password" id="setup-token" autocomplete="off" placeholder="Cole o código de configuração" /></div>
+            <p class="setup-help">Leia o código no arquivo <code>~/.pulso/security/setup-token</code> do servidor para criar o primeiro administrador.</p>
+          </div>
+          <div class="form-group">
+            <label for="username">Username</label>
+            <div class="input-wrapper">
+              <input
+                type="text"
+                id="username"
+                name="username"
+                placeholder="Enter your username"
+                autocomplete="username"
+                required
+                autofocus
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <div class="input-wrapper">
+              <input
+                type="password"
+                id="password"
+                name="password"
+                placeholder="Enter your password"
+                autocomplete="current-password"
+                required
+              />
+              <button type="button" class="password-toggle" id="password-toggle" aria-label="Show password">
+                <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-off-icon" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group" id="setup-confirm-group" hidden>
+            <label for="setup-confirm">Confirme a senha</label>
+            <div class="input-wrapper"><input type="password" id="setup-confirm" autocomplete="new-password" placeholder="Repita a senha" /></div>
+            <p class="setup-help">Use pelo menos 12 caracteres. Não há uma senha padrão.</p>
+          </div>
+          <div class="error-message" id="error-message" role="alert">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            <span id="error-text"></span>
+          </div>
+
+          <button type="submit" class="login-btn" id="login-btn">
+            <span class="btn-text">Sign In</span>
+            <span class="spinner"></span>
+          </button>
+        </form>
+
+        <div class="login-footer">
+          <span>Your workspace, protected by Pulso</span>
+        </div>
+      </div>
+      </main>
+    </div>
+
+    <script src="/assets/login.js" defer></script>
+  </body>
+</html>

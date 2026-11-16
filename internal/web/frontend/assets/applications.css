@@ -1,0 +1,27 @@
+.page-actions { display: flex; align-items: center; gap: 10px; }
+#application-dialog { width: min(640px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); overflow-y: auto; box-shadow: 0 20px 80px #102C3230; }
+#application-dialog::backdrop { background: #102C3280; }
+.application-heading { display: flex; justify-content: space-between; gap: 16px; padding: 26px 28px 22px; border-bottom: 1px solid var(--border); }
+.application-heading h2 { font-size: 23px; line-height: 1.3; font-weight: 650; letter-spacing: -.5px; }
+.application-heading p { margin-top: 7px; font-size: 13px; color: var(--text-muted); }
+.application-close { width: 38px; flex-shrink: 0; padding: 0; font-size: 23px; align-self: flex-start; }
+#application-form { padding: 25px 28px; }
+#application-fields { border: 0; min-width: 0; }
+.application-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 18px; }
+.application-wide { grid-column: 1 / -1; }
+.application-field { min-width: 0; }
+.application-field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 650; }
+.application-field label span { color: var(--text-muted); font-weight: 400; }
+.application-field input,.application-field select,.application-field textarea { width: 100%; min-width: 0; min-height: 43px; border: 1px solid #A9C0B9; border-radius: 7px; padding: 10px 11px; color: var(--text); background: var(--surface); font-family: var(--font); font-size: 13px; }
+.application-field textarea { font-family: var(--mono); resize: vertical; line-height: 1.6; }
+.application-field input::placeholder,.application-field textarea::placeholder { color: #607579; }
+.application-field p { margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
+#application-options { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+#application-options summary { width: fit-content; cursor: pointer; font-size: 12px; font-weight: 650; color: var(--primary); padding: 3px 0; }
+.application-options-grid { margin-top: 19px; }
+.application-error { color: var(--red); background: #FFF1F1; border: 1px solid #E3BEC0; padding: 11px 13px; border-radius: 7px; font-size: 13px; margin-top: 22px; overflow-wrap: anywhere; }
+.application-footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--border); }
+.application-footer > div { display: flex; gap: 8px; }
+.application-example { border: 0; background: transparent; color: var(--primary); text-decoration: underline; text-underline-offset: 3px; padding: 8px 0; font-size: 12px; }
+@media(max-width:760px) { .page-intro { flex-wrap: wrap; }.page-actions { flex-wrap: wrap; }.page-actions .btn { min-height: 43px; }.page-intro .page-actions { margin-top: 2px; } }
+@media(max-width:520px) { #application-dialog { max-height: calc(100dvh - 20px); width: calc(100% - 20px); }.application-heading { padding: 20px; }#application-form { padding: 20px; }.application-grid { grid-template-columns: minmax(0,1fr); gap: 17px; }.application-footer { flex-direction: column-reverse; align-items: stretch; gap: 12px; }.application-footer > div { justify-content: flex-end; }.application-footer .btn { min-height: 44px; }.application-example { align-self: flex-start; }.application-field input,.application-field select,.application-field textarea { font-size: 16px; } }

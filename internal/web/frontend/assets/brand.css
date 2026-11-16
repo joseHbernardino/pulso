@@ -1,0 +1,31 @@
+/* Pulso identity: petroleum, turquoise, amber, cloud, ink and slate. */
+:root {
+  color-scheme: light;
+  --petroleum: #123D43; --turquoise: #147D73; --mint: #42C5B6;
+  --amber: #F1B963; --cloud: #F2F6F5; --ink: #163137; --slate: #546B70;
+  --bg: var(--cloud); --surface: #FFFFFF; --surface-alt: #EAF1EF;
+  --border: #D4E1DD; --text: var(--ink); --text-muted: var(--slate); --text-dim: #607579;
+  --primary: var(--turquoise); --green: #14735A; --red: #B43D42; --yellow: #86540C;
+  --orange: #94500F; --magenta: #755293; --cyan: #247681;
+  --font: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); min-height: 100vh; }
+button,input,select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: wait; opacity: .65; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; width: fit-content; }
+.brand img { width: 43px; height: 43px; }
+.brand-word { font-family: "Trebuchet MS", var(--font); font-size: 32px; font-weight: 700; letter-spacing: -1.7px; line-height: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--surface); font-weight: 600; font-size: 12px; }
+.btn:hover { background: var(--surface-alt); border-color: #9AB8AF; }
+.btn-primary { background: var(--petroleum); border-color: var(--petroleum); color: #fff; }
+.btn-primary:hover { background: #20545B; border-color: #20545B; }
+.btn-danger { color: var(--red); }
+.btn-danger:hover { background: #FFF1F1; border-color: #DEB3B5; }
+code,kbd { font-family: var(--mono); }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
