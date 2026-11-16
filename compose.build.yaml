@@ -1,0 +1,8 @@
+# Build from this checkout before the first registry image is published.
+services:
+  pulso:
+    image: pulso:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile

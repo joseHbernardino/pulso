@@ -35,3 +35,12 @@ pulso.yaml
 # Nix
 result
 result-*
+
+# Local container deployment
+/.env
+/applications/
+/compose.override.yaml
+
+# Python tooling
+__pycache__/
+*.pyc

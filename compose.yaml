@@ -1,0 +1,30 @@
+services:
+  pulso:
+    image: ${PULSO_IMAGE:-ghcr.io/josehbernardino/pulso:latest}
+    restart: unless-stopped
+    stop_grace_period: 2m
+    ports:
+      - "${PULSO_BIND:-0.0.0.0}:${PULSO_PORT:-5011}:9615"
+    volumes:
+      - pulso_data:/var/lib/pulso
+      - type: bind
+        source: ${PULSO_APPS_DIR:-./applications}
+        target: /apps
+        bind:
+          create_host_path: false
+          selinux: Z
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pulso_data:

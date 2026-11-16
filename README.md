@@ -96,6 +96,23 @@ pulso web
 pulso doctor
 ```
 
+## Docker
+
+Run Pulso as a Docker service with persistent accounts, process recovery and
+application files. The image includes Python 3 and Node.js 24. Applications run
+inside the Pulso container, with projects mounted at `/apps`.
+
+```bash
+cp docker.env.example .env
+sudo install -d -m 0750 -o 10001 -g 10001 applications
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+The dashboard is exposed on port `5011`. Release tags publish multi-platform
+images to GHCR; once published, updates use `docker compose pull pulso` followed
+by `docker compose up -d`. See the [Docker deployment guide](docs/docker.md) for
+registry installation, RHEL/SELinux, application paths and persistence.
+
 ## Daemon
 
 You can also create applications in the browser: open `pulso web`, click

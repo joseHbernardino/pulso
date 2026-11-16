@@ -1,0 +1,16 @@
+# Only source code needed to compile Pulso enters the build context.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!pkg/
+!pkg/**
+!LICENSE
+**/.env
+**/.env.*
+**/*.sqlite
+**/*.sqlite-*
+**/node_modules

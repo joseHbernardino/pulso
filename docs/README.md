@@ -25,6 +25,7 @@ Welcome to the Pulso documentation. Pulso is a modern process manager and applic
 - [Publishing your own releases](publishing.md)
 - [Visual identity and logos](identity.md)
 - [Iniciar aplicações pelo painel](web-dashboard.md)
+- [Executar e atualizar em Docker](docker.md)
 
 - [Login, usuários e permissões](access-control.md)
 
