@@ -30,6 +30,7 @@ O diretório `security` é criado com permissão `0700`.
 | Consultar logs | Sim | Sim |
 | Consultar variáveis e argumentos dos processos | Não | Sim |
 | Criar, parar, reiniciar, recarregar e excluir aplicações | Não | Sim |
+| Ler e editar o arquivo `.env` e as opções da aplicação | Não | Sim |
 | Criar usuários, alterar perfis e redefinir senhas | Não | Sim |
 | Ativar e desativar contas | Não | Sim |
 

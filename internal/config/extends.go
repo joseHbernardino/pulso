@@ -55,6 +55,9 @@ func ResolveExtends(configs []types.ProcessConfig) ([]types.ProcessConfig, error
 		if len(cfg.Args) > 0 {
 			merged.Args = cfg.Args
 		}
+		if cfg.EnvFile != "" {
+			merged.EnvFile = cfg.EnvFile
+		}
 		if cfg.Cwd != "" {
 			merged.Cwd = cfg.Cwd
 		}

@@ -100,14 +100,14 @@
           values.forEach((value,i)=>{
             const cell=row.insertCell();cell.textContent=String(value);
             if([0,4,5,6,7,8,9].includes(i))cell.className="mono";
-            if(i===1){const wrap=document.createElement("div");wrap.className="application-name";const symbol=document.createElement("span");symbol.className="application-symbol";symbol.append(PulsoUI.icon("terminal"));const text=document.createElement("div"),name=document.createElement("strong"),detail=document.createElement("span");name.textContent=value;detail.className="process-id";detail.textContent=id.slice(0,8);text.append(name,detail);wrap.append(symbol,text);cell.replaceChildren(wrap);}
+            if(i===1){const wrap=document.createElement("div");wrap.className="application-name";const symbol=document.createElement("span");symbol.className="application-symbol";symbol.append(PulsoUI.icon("terminal"));const text=document.createElement("div"),name=document.createElement("strong"),detail=document.createElement("span");name.textContent=value;detail.className="process-id";detail.textContent=id.slice(0,8);text.append(name,detail);if(p.pending_changes){const pending=document.createElement("span");pending.className="application-pending";pending.textContent="Reinício pendente";text.append(pending);}wrap.append(symbol,text);cell.replaceChildren(wrap);}
             if(i===2){const tag=document.createElement("span");tag.className="runtime-tag";tag.textContent=value;cell.replaceChildren(tag);}
             if(i===3){const badge=document.createElement("span");badge.className="badge badge-"+state;const dot=document.createElement("span");dot.className="dot";dot.setAttribute("aria-hidden","true");badge.append(dot,document.createTextNode(stateLabels[state]));cell.replaceChildren(badge);}
             if(i===11)cell.title=String(value);
           });
           const actions=document.createElement("div");actions.className="actions";
           const running=["running","starting","stopping"].includes(p.state);
-          for(const [label,ic,style,handler] of [[running?"Reiniciar":"Iniciar",running?"refresh":"play","",()=>restartProc(id)],["Parar","stop","",()=>stopProc(id)],["Ver logs","logs","",()=>showLogs(id)],["Excluir","trash","btn-danger",()=>deleteProc(id,p.name)]]){
+          for(const [label,ic,style,handler] of [["Editar","edit","",()=>window.openApplicationSettings(id)],[running?"Reiniciar":"Iniciar",running?"refresh":"play","",()=>restartProc(id)],["Parar","stop","",()=>stopProc(id)],["Ver logs","logs","",()=>showLogs(id)],["Excluir","trash","btn-danger",()=>deleteProc(id,p.name)]]){
             if(label!=="Ver logs"&&!window.pulsoCanManage)continue;
             const btn=document.createElement("button");btn.type="button";btn.className="btn btn-icon "+style;btn.append(PulsoUI.icon(ic));btn.title=label;btn.setAttribute("aria-label",label+" "+p.name);btn.dataset.processAction=id+ic;btn.onclick=handler;if(label==="Parar"&&!running)btn.disabled=true;actions.append(btn);
           }

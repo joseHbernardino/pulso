@@ -101,7 +101,10 @@ pulso doctor
 You can also create applications in the browser: open `pulso web`, click
 **Nova aplicação**, and enter a program or script already on the server. The
 form supports runtime selection, working directories, arguments, environment
-variables and restart policies. The daemon dashboard requires login and stores
+variables and restart policies. Optionally set a `.env` path to load or create the file in
+the panel. Use **Editar** to save application settings and dotenv changes, then
+restart the application to apply them. Dotenv editing is restricted to admins.
+The daemon dashboard requires login and stores
 accounts and sessions in SQLite. On first access, create an administrator using
 the server setup code; see [login and permissions](docs/access-control.md). See the [web dashboard guide](docs/web-dashboard.md). For first-time administrator setup and admin/view roles, see [access control](docs/access-control.md).
 

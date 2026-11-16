@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/runtime"
 	"pulso.local/pulso/pkg/types"
 )
@@ -49,6 +50,11 @@ func prepareWebProcess(cfg types.ProcessConfig) (types.ProcessConfig, error) {
 		return cfg, fmt.Errorf("working directory must be a folder on the server")
 	}
 
+	cfg.EnvFile, err = envfile.Resolve(cfg.EnvFile, cfg.Cwd)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Launch = &types.LaunchConfig{Runtime: cfg.Runtime, Entrypoint: cfg.Entrypoint, Args: cfg.Args, Interpreter: cfg.Interpreter, UseBundle: cfg.UseBundle}
 	if cfg.Runtime == "auto" {
 		switch strings.ToLower(filepath.Ext(cfg.Entrypoint)) {
 		case ".py":

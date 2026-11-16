@@ -303,6 +303,7 @@ Each entry in the `processes` list defines a managed process.
 | `runtime`         | string      | No       | auto-detect     | Runtime: `go`, `python`, `node`, `bun`, `deno`, `ruby`, `php`, `auto` |
 | `args`            | string list | No       | `[]`            | Arguments passed after the entrypoint                                 |
 | `cwd`             | string      | No       | config file dir | Working directory for the process                                     |
+| `env_file`        | string      | No       |                 | Dotenv file, absolute or relative to process cwd                      |
 | `env`             | map         | No       | `{}`            | Environment variables (key-value)                                     |
 | `interpreter`     | string      | No       | auto            | Override the runtime interpreter binary                               |
 | `use_bundle`      | bool        | No       | `false`         | Wrap with `bundle exec` (Ruby)                                        |
@@ -415,6 +416,25 @@ Working directory for the process. The process is started with this directory as
 cwd: "./web"      # Relative to config file
 cwd: "/app"       # Absolute path
 ```
+
+#### `env_file`
+
+Loads a dotenv file whenever the process starts. Relative paths use the process
+working directory. The file must exist before startup and contain at most 64 KiB
+of UTF-8 text. Supported filenames include `.env`, `.env.production`, and
+`application.env`; symbolic links are rejected.
+
+```yaml
+cwd: /srv/my-api
+env_file: .env
+env:
+  PORT: "8080" # Explicit values override the file.
+```
+
+Precedence: inherited daemon environment, then dotenv values, then explicit
+`env` values. The daemon's environment is never modified. The panel can edit the
+file and save application settings for the next manual restart; see the
+[web dashboard guide](web-dashboard.md).
 
 #### `env`
 

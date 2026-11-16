@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/healthcheck"
 	"pulso.local/pulso/internal/hooks"
 	"pulso.local/pulso/pkg/types"
@@ -30,6 +31,10 @@ type ManagedProcess struct {
 	Restarts  int
 	CreatedAt time.Time
 
+	operationMu      *sync.Mutex
+	pending          *types.ProcessConfig
+	envRevision      string
+	envDirty         bool
 	mu               sync.RWMutex
 	state            atomic.Value // stores types.ProcessState
 	ready            atomic.Bool
@@ -66,13 +71,14 @@ type ManagedProcess struct {
 // NewManagedProcess creates a new ManagedProcess from the given config.
 func NewManagedProcess(cfg types.ProcessConfig) *ManagedProcess {
 	p := &ManagedProcess{
-		ID:        uuid.New().String(),
-		Config:    cfg,
-		CreatedAt: time.Now(),
-		backoff:   NewBackoff(),
-		exited:    make(chan struct{}),
-		closeOnce: &sync.Once{},
-		hookExec:  hooks.NewExecutor(),
+		ID:          uuid.New().String(),
+		operationMu: &sync.Mutex{},
+		Config:      cfg,
+		CreatedAt:   time.Now(),
+		backoff:     NewBackoff(),
+		exited:      make(chan struct{}),
+		closeOnce:   &sync.Once{},
+		hookExec:    hooks.NewExecutor(),
 	}
 	p.state.Store(types.StateStopped)
 	return p
@@ -225,6 +231,11 @@ func (p *ManagedProcess) SetStateDirect(state types.ProcessState) {
 // environment, wires up stdout/stderr, and transitions to StateRunning
 // immediately unless readiness gating is enabled.
 func (p *ManagedProcess) Start(ctx context.Context) error {
+	environment, envRevision, err := envfile.Environment(p.Config.EnvFile, p.Config.Cwd, p.Config.Env)
+	if err != nil {
+		return fmt.Errorf("carregar ambiente: %w", err)
+	}
+
 	if !p.SetState(types.StateStarting) {
 		current := p.GetState()
 		return fmt.Errorf("cannot start process %q: invalid transition from %s", p.Config.Name, current)
@@ -253,7 +264,7 @@ func (p *ManagedProcess) Start(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 
 	// Build environment: inherit current env, then overlay config env.
-	cmd.Env = buildEnv(p.Config.Env)
+	cmd.Env = buildEnv(environment)
 	if p.Config.Cwd != "" {
 		cmd.Dir = p.Config.Cwd
 	}
@@ -293,6 +304,8 @@ func (p *ManagedProcess) Start(ctx context.Context) error {
 	p.mu.Lock()
 	p.PID = cmd.Process.Pid
 	p.startedAt = time.Now()
+	p.envRevision = envRevision
+	p.envDirty = false
 	p.mu.Unlock()
 
 	if !p.Config.WaitReady {
@@ -645,21 +658,22 @@ func (p *ManagedProcess) Info() types.ProcessInfo {
 	defer p.mu.RUnlock()
 
 	info := types.ProcessInfo{
-		ID:            p.ID,
-		NumericID:     p.NumericID,
-		Name:          p.Config.Name,
-		Namespace:     p.Config.Namespace,
-		InstanceIndex: p.Config.InstanceIndex,
-		Runtime:       p.Config.Runtime,
-		State:         p.GetState(),
-		Ready:         p.ready.Load(),
-		PID:           p.PID,
-		ExitCode:      p.ExitCode,
-		Restarts:      p.Restarts,
-		CreatedAt:     p.CreatedAt,
-		Config:        p.Config,
-		LastEvent:     p.lastEvent,
-		LastReason:    p.lastReason,
+		PendingChanges: p.pending != nil || p.envDirty,
+		ID:             p.ID,
+		NumericID:      p.NumericID,
+		Name:           p.Config.Name,
+		Namespace:      p.Config.Namespace,
+		InstanceIndex:  p.Config.InstanceIndex,
+		Runtime:        p.Config.Runtime,
+		State:          p.GetState(),
+		Ready:          p.ready.Load(),
+		PID:            p.PID,
+		ExitCode:       p.ExitCode,
+		Restarts:       p.Restarts,
+		CreatedAt:      p.CreatedAt,
+		Config:         p.Config,
+		LastEvent:      p.lastEvent,
+		LastReason:     p.lastReason,
 	}
 
 	if !p.startedAt.IsZero() {

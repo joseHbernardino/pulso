@@ -72,6 +72,9 @@ func diffProcess(a, b types.ProcessConfig) []string {
 	if !reflect.DeepEqual(a.Args, b.Args) {
 		changed = append(changed, "args")
 	}
+	if a.EnvFile != b.EnvFile {
+		changed = append(changed, "env_file")
+	}
 	if a.Cwd != b.Cwd {
 		changed = append(changed, "cwd")
 	}

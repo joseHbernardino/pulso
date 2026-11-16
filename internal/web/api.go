@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/httputil"
 	"pulso.local/pulso/internal/logutil"
 	"pulso.local/pulso/internal/metrics"
@@ -48,13 +50,13 @@ func (s *Server) handleGetProcess(w http.ResponseWriter, r *http.Request) {
 // handleStartProcess creates and starts a new process.
 func (s *Server) handleStartProcess(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebBody)
-	var cfg types.ProcessConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	var req applicationSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	cfg, err := prepareWebProcess(cfg)
+	cfg, err := prepareWebProcess(req.ProcessConfig)
 	if err != nil {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -66,6 +68,18 @@ func (s *Server) handleStartProcess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.EnvContent != nil {
+		if cfg.EnvFile == "" {
+			settingsError(w, fmt.Errorf("informe o caminho do .env"))
+			return
+		}
+		doc, err := envfile.Write(cfg.EnvFile, *req.EnvContent, req.EnvRevision)
+		if err != nil {
+			settingsError(w, err)
+			return
+		}
+		s.supervisor.ObserveEnvRevision(cfg.EnvFile, doc.Revision)
+	}
 	// Managed applications outlive the HTTP request and its timeout. The
 	// supervisor still owns cancellation when the process or daemon is stopped.
 	proc, err := s.supervisor.AddProcess(context.WithoutCancel(r.Context()), cfg)

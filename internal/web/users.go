@@ -54,7 +54,7 @@ func (s *Server) authorizeWeb(next http.Handler) http.Handler {
 				writeJSON(w, http.StatusForbidden, loginResponse{Error: "permission denied"})
 				return
 			}
-			if (mutation || r.URL.Path == "/users" || strings.HasPrefix(r.URL.Path, "/api/v1/users")) && session.Role != auth.RoleAdmin {
+			if (mutation || strings.HasSuffix(r.URL.Path, "/settings") || r.URL.Path == "/users" || strings.HasPrefix(r.URL.Path, "/api/v1/users")) && session.Role != auth.RoleAdmin {
 				writeJSON(w, http.StatusForbidden, loginResponse{Error: "administrator permission required"})
 				return
 			}

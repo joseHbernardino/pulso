@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/rs/zerolog/log"
+	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/hooks"
 	"pulso.local/pulso/internal/metrics"
 	"pulso.local/pulso/pkg/types"
@@ -118,6 +119,11 @@ func (s *Supervisor) addProcess(ctx context.Context, cfg types.ProcessConfig, st
 		}
 		cfg.Cwd = cwd
 	}
+	envPath, err := envfile.Resolve(cfg.EnvFile, cfg.Cwd)
+	if err != nil {
+		return nil, err
+	}
+	cfg.EnvFile = envPath
 	proc := NewManagedProcess(cfg)
 	proc.ApplyDefaults(s.defaults)
 	proc.metricsCol = s.metrics
@@ -178,10 +184,11 @@ func (s *Supervisor) addProcess(ctx context.Context, cfg types.ProcessConfig, st
 
 // StopProcess stops a managed process by ID or name.
 func (s *Supervisor) StopProcess(id string, force bool, timeout time.Duration) error {
-	proc, err := s.Get(id)
+	proc, unlock, err := s.lockProcess(id)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	s.cancelRestartTimer(proc.ID)
 	s.cancelMonitor(proc.ID)
 	state := proc.GetState()
@@ -203,10 +210,21 @@ func (s *Supervisor) StopProcess(id string, force bool, timeout time.Duration) e
 
 // RestartProcess stops and restarts a managed process.
 func (s *Supervisor) RestartProcess(ctx context.Context, id string) error {
-	proc, err := s.Get(id)
+	proc, unlock, err := s.lockProcess(id)
 	if err != nil {
 		return err
 	}
+	defer unlock()
+	next, err := s.replacement(proc)
+	if err != nil {
+		return err
+	}
+	installed := false
+	defer func() {
+		if next != proc && !installed {
+			next.CloseLogFile()
+		}
+	}()
 
 	// Pre-restart hook: can block the restart.
 	if proc.Config.Hooks != nil && proc.Config.Hooks.PreRestart != nil {
@@ -248,6 +266,10 @@ func (s *Supervisor) RestartProcess(ctx context.Context, id string) error {
 		}
 	}
 
+	s.installReplacement(proc, next)
+	installed = true
+	proc = next
+
 	if err := s.startManagedProcess(ctx, proc); err != nil {
 		proc.RecordObservation("restart_failed", "manual restart failed")
 		return fmt.Errorf("failed to restart process %q: %w", proc.Config.Name, err)
@@ -274,10 +296,21 @@ func (s *Supervisor) RestartProcess(ctx context.Context, id string) error {
 // ReloadProcess performs a graceful reload, distinct from a restart.
 // It fires reload-specific hooks (pre_reload/post_reload) instead of restart hooks.
 func (s *Supervisor) ReloadProcess(ctx context.Context, id string) error {
-	proc, err := s.Get(id)
+	proc, unlock, err := s.lockProcess(id)
 	if err != nil {
 		return err
 	}
+	defer unlock()
+	next, err := s.replacement(proc)
+	if err != nil {
+		return err
+	}
+	installed := false
+	defer func() {
+		if next != proc && !installed {
+			next.CloseLogFile()
+		}
+	}()
 
 	// Pre-reload hook: can block the reload.
 	if proc.Config.Hooks != nil && proc.Config.Hooks.PreReload != nil {
@@ -302,6 +335,10 @@ func (s *Supervisor) ReloadProcess(ctx context.Context, id string) error {
 			return fmt.Errorf("failed to stop process %q for reload: %w", proc.Config.Name, err)
 		}
 	}
+
+	s.installReplacement(proc, next)
+	installed = true
+	proc = next
 
 	if err := s.startManagedProcess(ctx, proc); err != nil {
 		proc.RecordObservation("reload_failed", "manual reload failed")
@@ -328,10 +365,11 @@ func (s *Supervisor) ReloadProcess(ctx context.Context, id string) error {
 
 // RemoveProcess stops the process if running and removes it from the registry.
 func (s *Supervisor) RemoveProcess(id string) error {
-	proc, err := s.Get(id)
+	proc, unlock, err := s.lockProcess(id)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
 	state := proc.GetState()
 	if state == types.StateRunning || state == types.StateStarting {
@@ -584,6 +622,15 @@ func (s *Supervisor) enforceMemoryLimits() {
 // handleExit is the callback invoked by the monitor when a process exits.
 // It decides whether to restart the process.
 func (s *Supervisor) handleExit(proc *ManagedProcess, exitCode int) {
+	proc.operationMu.Lock()
+	defer proc.operationMu.Unlock()
+	s.mu.RLock()
+	current := s.procs[proc.ID] == proc && s.desiredRunning[proc.ID] && !s.shuttingDown
+	s.mu.RUnlock()
+	if !current || proc.GetState() == types.StateRunning || proc.GetState() == types.StateStarting {
+		return
+	}
+
 	if !proc.ExitedBeforeMinUptime() {
 		proc.ResetRestartStreak()
 	}
@@ -610,6 +657,14 @@ func (s *Supervisor) handleExit(proc *ManagedProcess, exitCode int) {
 		Msg("scheduling process restart")
 
 	timer := time.AfterFunc(delay, func() {
+		proc.operationMu.Lock()
+		defer proc.operationMu.Unlock()
+		s.mu.RLock()
+		current := s.procs[proc.ID] == proc && s.desiredRunning[proc.ID] && !s.shuttingDown
+		s.mu.RUnlock()
+		if !current || proc.GetState() == types.StateRunning || proc.GetState() == types.StateStarting {
+			return
+		}
 		// Clear the timer reference now that it has fired.
 		s.mu.Lock()
 		delete(s.restartTimers, proc.ID)
@@ -771,10 +826,10 @@ func (s *Supervisor) Save() error {
 	for _, proc := range procs {
 		info := proc.Info()
 		snapshots = append(snapshots, processSnapshot{
-			Config:       proc.Config,
+			Config:       proc.desiredConfig(),
 			RunOnRestore: boolPointer(desired[proc.ID]),
 			NumericID:    proc.NumericID,
-			Restarts:     proc.Restarts,
+			Restarts:     info.Restarts,
 			CreatedAt:    proc.CreatedAt.Format(time.RFC3339),
 			PID:          info.PID,
 			State:        string(info.State),
