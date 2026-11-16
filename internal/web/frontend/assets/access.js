@@ -12,6 +12,7 @@
       document.querySelectorAll("[data-admin-only]").forEach(el => el.hidden = !window.pulsoCanManage);
       const name = document.getElementById("account-name"),role=document.getElementById("account-role"),logout=document.getElementById("account-logout");
       if(name) name.textContent=state.username || "Acesso local";
+      document.querySelectorAll("[data-account-initials]").forEach(el=>el.textContent=(state.username||"PL").slice(0,2).toLocaleUpperCase("pt-BR"));
       if(role) role.textContent=window.pulsoCanManage ? "Administrador" : "Visualização";
       if(logout) logout.hidden=state.mode==="disabled";
       if(state.mode!=="users") document.querySelectorAll(".nav-users").forEach(el=>el.hidden=true);

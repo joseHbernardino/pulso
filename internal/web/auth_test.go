@@ -98,14 +98,14 @@ func TestLoginPage(t *testing.T) {
 		t.Errorf("expected text/html content type, got %q", ct)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "Sign in") {
-		t.Error("login page should contain 'Sign in'")
+	if !strings.Contains(body, "Entre para acompanhar") {
+		t.Error("login page should contain 'Entre para acompanhar'")
 	}
-	if !strings.Contains(body, "Username") {
-		t.Error("login page should contain 'Username'")
+	if !strings.Contains(body, "Usuário") {
+		t.Error("login page should contain 'Usuário'")
 	}
-	if !strings.Contains(body, "Password") {
-		t.Error("login page should contain 'Password'")
+	if !strings.Contains(body, "Senha") {
+		t.Error("login page should contain 'Senha'")
 	}
 }
 

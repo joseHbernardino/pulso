@@ -1,28 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pulso - Sign In</title>
+    <meta name="description" content="Pulso: gerenciamento e acompanhamento de aplicações, processos e acesso da equipe."><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Entrar · Pulso</title>
     <meta name="theme-color" content="#123D43" />
     <link rel="icon" type="image/svg+xml" href="/assets/pulso-mark.svg" />
-    <link rel="stylesheet" href="/assets/brand.css" />
+    <link rel="preload" href="/assets/fonts/Manrope.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/assets/brand.css" />
     <link rel="stylesheet" href="/assets/login.css" />
     <style>[hidden]{display:none!important}.setup-help{font-size:12px;color:var(--text-muted);margin-top:9px;overflow-wrap:anywhere}</style>
   </head>
   <body>
     <div class="login-layout">
-      <aside class="login-story" aria-label="About Pulso">
-        <a class="brand" href="/" aria-label="Pulso home"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
-        <div class="story-copy"><h2>Keep your apps<br />in rhythm.</h2><p>One place to follow your applications, understand their status and keep things moving.</p><div class="process-orbit" aria-hidden="true"><span class="orbit-node">●</span><span class="orbit-node central"><img src="/assets/pulso-mark.svg" alt="" /></span><span class="orbit-node">↻</span></div></div>
-        <p class="story-footer">Your applications. Your workspace.</p>
+      <aside class="login-story" aria-label="Sobre o Pulso">
+        <a class="brand" href="/" aria-label="Pulso, início"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
+        <div class="story-copy"><h2>Aplicações em ordem.<br />Você no controle.</h2><p>Um espaço para iniciar, acompanhar e cuidar das suas aplicações. Com clareza em cada processo.</p><div class="process-orbit" aria-hidden="true"><svg viewBox="0 0 480 220" fill="none"><path d="M25 110H455" stroke="#63958A" stroke-dasharray="4 7"/><rect x="52" y="67" width="86" height="86" rx="23" fill="#24534F" stroke="#47766B"/><path d="m82 94 16 16-16 16m18 0h14" stroke="#A8D9CA" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="240" cy="110" r="67" stroke="#47766B"/><circle cx="240" cy="110" r="52" fill="#28685A" stroke="#549E81"/><path d="m224 89 34 21-34 21V89Z" fill="#92D8B4"/><rect x="342" y="67" width="86" height="86" rx="23" fill="#24534F" stroke="#47766B"/><path d="m366 110 13 13 24-26" stroke="#A8D9CA" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="172" cy="110" r="4" fill="#89C7AD"/><circle cx="308" cy="110" r="4" fill="#89C7AD"/><text x="95" y="191" text-anchor="middle">Inicie</text><text x="240" y="205" text-anchor="middle">Acompanhe</text><text x="385" y="191" text-anchor="middle">Mantenha</text></svg></div></div>
+        <p class="story-footer">Do primeiro comando ao próximo ciclo.</p>
       </aside>
       <main class="login-main">
       <div class="login-card">
         <div class="login-header">
-          <a class="brand mobile-brand" href="/" aria-label="Pulso home"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
-          <h1>Welcome to Pulso</h1>
-          <p>Sign in to your application workspace.</p>
+          <a class="brand mobile-brand" href="/" aria-label="Pulso, início"><img src="/assets/pulso-mark.svg" alt="" /><span class="brand-word">pulso</span></a>
+          <h1>Bem-vindo ao Pulso</h1>
+          <p>Entre para acompanhar suas aplicações.</p>
         </div>
 
         <form id="login-form" autocomplete="on">
@@ -32,13 +32,13 @@
             <p class="setup-help">Leia o código no arquivo <code>~/.pulso/security/setup-token</code> do servidor para criar o primeiro administrador.</p>
           </div>
           <div class="form-group">
-            <label for="username">Username</label>
+            <label for="username">Usuário</label>
             <div class="input-wrapper">
               <input
                 type="text"
                 id="username"
                 name="username"
-                placeholder="Enter your username"
+                placeholder="Seu nome de usuário"
                 autocomplete="username"
                 required
                 autofocus
@@ -47,17 +47,17 @@
           </div>
 
           <div class="form-group">
-            <label for="password">Password</label>
+            <label for="password">Senha</label>
             <div class="input-wrapper">
               <input
                 type="password"
                 id="password"
                 name="password"
-                placeholder="Enter your password"
+                placeholder="Sua senha"
                 autocomplete="current-password"
                 required
               />
-              <button type="button" class="password-toggle" id="password-toggle" aria-label="Show password">
+              <button type="button" class="password-toggle" id="password-toggle" aria-label="Mostrar senha">
                 <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
@@ -85,13 +85,13 @@
           </div>
 
           <button type="submit" class="login-btn" id="login-btn">
-            <span class="btn-text">Sign In</span>
+            <span class="btn-text">Entrar</span>
             <span class="spinner"></span>
           </button>
         </form>
 
         <div class="login-footer">
-          <span>Your workspace, protected by Pulso</span>
+          <span>Acesso ao seu espaço de trabalho</span>
         </div>
       </div>
       </main>

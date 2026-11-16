@@ -7,21 +7,24 @@ funciona da mesma forma na marca, no terminal e no arquivo de configuração.
 
 | Cor | Hex | Uso |
 | --- | --- | --- |
-| Petróleo | `#123D43` | Navegação, fundo institucional, ações principais |
-| Turquesa | `#147D73` | Interação, foco e elementos de destaque sobre fundo claro |
+| Petróleo | `#153F46` | Marca e fundo institucional |
+| Turquesa | `#087D6C` | Interação, foco e elementos de destaque sobre fundo claro |
 | Menta | `#42C5B6` | Símbolo e destaques sobre petróleo |
 | Âmbar | `#F1B963` | Nó central do símbolo e atenção sobre fundo escuro |
-| Nuvem | `#F2F6F5` | Fundo do espaço de trabalho |
-| Tinta | `#163137` | Texto principal |
+| Nuvem | `#F5F7F8` | Fundo do espaço de trabalho |
+| Tinta | `#233C40` | Texto principal |
 
 O símbolo é um P aberto: uma haste e uma volta que representa o ciclo de
 execução. O ponto âmbar representa o processo supervisionado. Não alterar as
 proporções, inclinar o símbolo ou adicionar efeitos de brilho.
 
-A interface usa Aptos / Segoe UI Variable Text / Segoe UI, com fontes locais de
-reserva. A marca usa Trebuchet MS. Código e identificadores usam Cascadia Code /
-SFMono-Regular / Consolas. Não há downloads de fontes ou dependências externas
-para renderizar a interface.
+A interface e a marca usam Manrope, incluída no próprio binário sob a licença
+SIL Open Font License. Código e identificadores usam Cascadia Code /
+SFMono-Regular / Consolas. Não há requisições externas para carregar fontes.
+Aplicações e Usuários compartilham o mesmo menu, cabeçalho, menu da conta,
+componentes e estilos por meio de `shell.js`, `brand.css` e `dashboard.css`.
+No celular, a navegação fica em um menu recolhível e as tabelas permitem rolagem
+horizontal. Os filtros funcionam sobre os dados reais do servidor.
 
 O painel prioriza uma tabela de aplicações, estados legíveis e ações diretas.
 A cor reforça o estado, sempre acompanhado de texto. O login usa uma composição

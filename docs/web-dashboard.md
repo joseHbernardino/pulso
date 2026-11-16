@@ -20,10 +20,10 @@ Abra o painel em `http://127.0.0.1:9615` e clique em **Nova aplicação**.
 
 Para experimentar sem um projeto próprio, clique em **Preencher exemplo** e
 depois em **Iniciar aplicação**. O exemplo usa `sleep 3600`, sem reinício
-automático. Remova-o depois com **Delete**.
+automático. Remova-o depois com **Excluir**.
 
-Use **Logs** para ver a saída, **Stop** para parar, **Restart** para reiniciar e
-**Delete** para parar e remover o cadastro. O processo continua supervisionado
+Use **Ver logs** para ver a saída, **Parar** para parar, **Reiniciar** para reiniciar e
+**Excluir** para parar e remover o cadastro. O processo continua supervisionado
 quando a página ou a requisição que o iniciou é encerrada.
 
 O painel mantém os dados preenchidos quando há um erro, como nome duplicado,
