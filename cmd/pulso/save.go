@@ -1,50 +1,27 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 	"pulso.local/pulso/internal/daemon"
 )
 
 func newSaveCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "save",
-		Short: "Save current process list for resurrection",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Try daemon IPC.
-			if daemonIsRunning() {
-				resp, err := sendIPC(daemon.ActionSave, nil)
-				if err != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "[Pulso] Daemon IPC failed, using direct mode: %v\n", err)
-				} else if resp.Success {
-					var result struct {
-						Status string `json:"status"`
-					}
-					if err := json.Unmarshal(resp.Data, &result); err == nil {
-						_, _ = fmt.Fprintln(os.Stdout, "[Pulso] Process state saved")
-						return nil
-					}
-				}
-			}
-
-			// Direct mode.
-			sup, err := getSupervisor()
-			if err != nil {
-				return err
-			}
-
-			if err := sup.Save(); err != nil {
-				return fmt.Errorf("failed to save process state: %w", err)
-			}
-
-			procs := sup.List()
-			_, _ = fmt.Fprintf(os.Stdout, "[Pulso] Saved state for %d process(es)\n", len(procs))
-			return nil
-		},
-	}
-
-	return cmd
+	return &cobra.Command{Use: "save", Short: "Save current process list for resurrection", RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := ensureDaemon()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		resp, err := client.Send(context.Background(), daemon.Request{Action: daemon.ActionSave})
+		if err != nil {
+			return fmt.Errorf("save recovery state: %w", err)
+		}
+		if !resp.Success {
+			return fmt.Errorf("save recovery state: %s", resp.Error)
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "[Pulso] Process state saved")
+		return err
+	}}
 }

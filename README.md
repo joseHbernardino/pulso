@@ -285,3 +285,5 @@ make clean    # Remove build artifacts
 ## License
 
 MIT
+
+See [Linux startup and automatic recovery](docs/boot-recovery.md) for systemd installation and recovery behavior.

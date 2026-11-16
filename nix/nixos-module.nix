@@ -88,8 +88,8 @@ in
       after = [ "network.target" ];
 
       serviceConfig = {
-        Type = "notify";
-        ExecStart = "${lib.getExe cfg.package} daemon start --config ${cfg.configDir}/pulso.yaml";
+        Type = "simple";
+        ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.settings.daemon.data_dir} daemon run --web --config ${cfg.configDir}/pulso.yaml";
         Restart = "on-failure";
         RestartSec = "5s";
 

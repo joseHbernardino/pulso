@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -32,6 +33,7 @@ type MetricsCollector interface {
 
 // Options configures a Supervisor.
 type Options struct {
+	AutoSave         bool // Persist user changes synchronously for daemon recovery.
 	LogDir           string
 	Defaults         types.DefaultsConfig
 	MetricsCollector MetricsCollector
@@ -41,34 +43,40 @@ type Options struct {
 // Supervisor manages a set of processes, handling start, stop, restart, and
 // lifecycle monitoring.
 type Supervisor struct {
-	mu            sync.RWMutex
-	procs         map[string]*ManagedProcess    // keyed by UUID
-	byName        map[string]string             // name -> UUID
-	byNumeric     map[int]string                // numeric ID -> UUID
-	monitors      map[string]context.CancelFunc // UUID -> monitor cancel
-	restartTimers map[string]*time.Timer        // UUID -> pending restart timer
-	nextID        int                           // auto-increment counter for numeric IDs
-	defaults      types.DefaultsConfig
-	logDir        string
-	metrics       MetricsCollector
-	metricsStop   chan struct{}
-	metricsDone   chan struct{}
+	mu             sync.RWMutex
+	persistMu      sync.Mutex
+	autoSave       bool
+	shuttingDown   bool
+	desiredRunning map[string]bool
+	procs          map[string]*ManagedProcess    // keyed by UUID
+	byName         map[string]string             // name -> UUID
+	byNumeric      map[int]string                // numeric ID -> UUID
+	monitors       map[string]context.CancelFunc // UUID -> monitor cancel
+	restartTimers  map[string]*time.Timer        // UUID -> pending restart timer
+	nextID         int                           // auto-increment counter for numeric IDs
+	defaults       types.DefaultsConfig
+	logDir         string
+	metrics        MetricsCollector
+	metricsStop    chan struct{}
+	metricsDone    chan struct{}
 }
 
 // New creates a new Supervisor with the given options.
 func New(opts Options) *Supervisor {
 	s := &Supervisor{
-		procs:         make(map[string]*ManagedProcess),
-		byName:        make(map[string]string),
-		byNumeric:     make(map[int]string),
-		monitors:      make(map[string]context.CancelFunc),
-		restartTimers: make(map[string]*time.Timer),
-		nextID:        0,
-		defaults:      opts.Defaults,
-		logDir:        opts.LogDir,
-		metrics:       opts.MetricsCollector,
-		metricsStop:   make(chan struct{}),
-		metricsDone:   make(chan struct{}),
+		autoSave:       opts.AutoSave,
+		desiredRunning: make(map[string]bool),
+		procs:          make(map[string]*ManagedProcess),
+		byName:         make(map[string]string),
+		byNumeric:      make(map[int]string),
+		monitors:       make(map[string]context.CancelFunc),
+		restartTimers:  make(map[string]*time.Timer),
+		nextID:         0,
+		defaults:       opts.Defaults,
+		logDir:         opts.LogDir,
+		metrics:        opts.MetricsCollector,
+		metricsStop:    make(chan struct{}),
+		metricsDone:    make(chan struct{}),
 	}
 
 	if opts.MetricsCollector != nil && opts.MetricsInterval > 0 {
@@ -82,10 +90,34 @@ func New(opts Options) *Supervisor {
 
 // AddProcess creates, registers, and starts a new managed process.
 func (s *Supervisor) AddProcess(ctx context.Context, cfg types.ProcessConfig) (*ManagedProcess, error) {
+	proc, err := s.addProcess(ctx, cfg, true, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.persistChange(); err != nil {
+		return proc, err
+	}
+	return proc, nil
+}
+
+func (s *Supervisor) addProcess(ctx context.Context, cfg types.ProcessConfig, start bool, numericID *int) (*ManagedProcess, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid process config: %w", err)
 	}
 
+	if cfg.Cwd == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		cfg.Cwd = cwd
+	} else {
+		cwd, err := filepath.Abs(cfg.Cwd)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Cwd = cwd
+	}
 	proc := NewManagedProcess(cfg)
 	proc.ApplyDefaults(s.defaults)
 	proc.metricsCol = s.metrics
@@ -99,29 +131,43 @@ func (s *Supervisor) AddProcess(ctx context.Context, cfg types.ProcessConfig) (*
 
 	// Register before starting so shutdown can find it.
 	s.mu.Lock()
-	if _, exists := s.byName[cfg.Name]; exists {
+	if _, exists := s.byName[cfg.Name]; exists || s.shuttingDown {
 		s.mu.Unlock()
 		proc.CloseLogFile()
 		return nil, fmt.Errorf("process with name %q already exists", cfg.Name)
 	}
 	proc.NumericID = s.nextID
-	s.nextID++
+	if numericID != nil {
+		if _, exists := s.byNumeric[*numericID]; !exists {
+			proc.NumericID = *numericID
+		}
+	}
+	if s.nextID <= proc.NumericID {
+		s.nextID = proc.NumericID + 1
+	}
 	s.procs[proc.ID] = proc
+	s.desiredRunning[proc.ID] = start
 	s.byName[cfg.Name] = proc.ID
 	s.byNumeric[proc.NumericID] = proc.ID
 	s.mu.Unlock()
 
-	if err := s.startManagedProcess(ctx, proc); err != nil {
-		// Unregister on failure.
-		s.mu.Lock()
-		delete(s.procs, proc.ID)
-		delete(s.byName, cfg.Name)
-		delete(s.byNumeric, proc.NumericID)
-		s.mu.Unlock()
-		proc.CloseLogFile()
-		return nil, err
-	}
+	if start {
+		if err := s.startManagedProcess(ctx, proc); err != nil {
+			// Unregister on failure.
+			s.mu.Lock()
+			delete(s.procs, proc.ID)
+			delete(s.desiredRunning, proc.ID)
+			delete(s.byName, cfg.Name)
+			delete(s.byNumeric, proc.NumericID)
+			s.mu.Unlock()
+			proc.CloseLogFile()
+			if saveErr := s.persistChange(); saveErr != nil {
+				log.Error().Err(saveErr).Msg("persist failed application cleanup")
+			}
+			return nil, err
+		}
 
+	}
 	log.Info().
 		Str("process", cfg.Name).
 		Str("id", proc.ID).
@@ -136,22 +182,23 @@ func (s *Supervisor) StopProcess(id string, force bool, timeout time.Duration) e
 	if err != nil {
 		return err
 	}
-
-	// If the process is already in a terminal state, nothing to do.
-	state := proc.GetState()
-	if state != types.StateRunning && state != types.StateStarting {
-		s.cancelMonitor(proc.ID)
-		return nil
-	}
-
-	if force {
-		err := proc.ForceStop()
-		s.cancelMonitor(proc.ID)
-		return err
-	}
-	err = proc.Stop(timeout)
+	s.cancelRestartTimer(proc.ID)
 	s.cancelMonitor(proc.ID)
-	return err
+	state := proc.GetState()
+	if state == types.StateRunning || state == types.StateStarting {
+		if force {
+			err = proc.ForceStop()
+		} else {
+			err = proc.Stop(timeout)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.desiredRunning[proc.ID] = false
+	s.mu.Unlock()
+	return s.persistChange()
 }
 
 // RestartProcess stops and restarts a managed process.
@@ -218,7 +265,10 @@ func (s *Supervisor) RestartProcess(ctx context.Context, id string) error {
 		hookExec.RunPost(ctx, proc.Config.Hooks.PostRestart, "post_restart", proc.Config)
 	}
 
-	return nil
+	s.mu.Lock()
+	s.desiredRunning[proc.ID] = true
+	s.mu.Unlock()
+	return s.persistChange()
 }
 
 // ReloadProcess performs a graceful reload, distinct from a restart.
@@ -270,7 +320,10 @@ func (s *Supervisor) ReloadProcess(ctx context.Context, id string) error {
 		hookExec.RunPost(ctx, proc.Config.Hooks.PostReload, "post_reload", proc.Config)
 	}
 
-	return nil
+	s.mu.Lock()
+	s.desiredRunning[proc.ID] = true
+	s.mu.Unlock()
+	return s.persistChange()
 }
 
 // RemoveProcess stops the process if running and removes it from the registry.
@@ -301,6 +354,7 @@ func (s *Supervisor) RemoveProcess(id string) error {
 
 	s.mu.Lock()
 	delete(s.procs, proc.ID)
+	delete(s.desiredRunning, proc.ID)
 	delete(s.byName, proc.Config.Name)
 	delete(s.byNumeric, proc.NumericID)
 	delete(s.monitors, proc.ID)
@@ -313,7 +367,7 @@ func (s *Supervisor) RemoveProcess(id string) error {
 		Str("id", proc.ID).
 		Msg("process removed")
 
-	return nil
+	return s.persistChange()
 }
 
 // List returns info for all managed processes sorted by numeric ID.
@@ -439,6 +493,9 @@ func serviceGroupName(name string) string {
 
 // Shutdown stops all managed processes and cleans up.
 func (s *Supervisor) Shutdown() error {
+	s.mu.Lock()
+	s.shuttingDown = true
+	s.mu.Unlock()
 	select {
 	case <-s.metricsDone:
 	default:
@@ -697,12 +754,16 @@ func (s *Supervisor) AppDir(name string) string {
 // Save persists the current process table to disk as dump.json with full metadata.
 // Also writes per-app metadata.json files.
 func (s *Supervisor) Save() error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	// Copy process references under lock, then snapshot outside the lock
 	// to minimize lock hold time.
 	s.mu.RLock()
 	procs := make([]*ManagedProcess, 0, len(s.procs))
+	desired := make(map[string]bool, len(s.procs))
 	for _, proc := range s.procs {
 		procs = append(procs, proc)
+		desired[proc.ID] = s.desiredRunning[proc.ID]
 	}
 	s.mu.RUnlock()
 
@@ -710,13 +771,14 @@ func (s *Supervisor) Save() error {
 	for _, proc := range procs {
 		info := proc.Info()
 		snapshots = append(snapshots, processSnapshot{
-			Config:    proc.Config,
-			NumericID: proc.NumericID,
-			Restarts:  proc.Restarts,
-			CreatedAt: proc.CreatedAt.Format(time.RFC3339),
-			PID:       info.PID,
-			State:     string(info.State),
-			StartedAt: info.StartedAt,
+			Config:       proc.Config,
+			RunOnRestore: boolPointer(desired[proc.ID]),
+			NumericID:    proc.NumericID,
+			Restarts:     proc.Restarts,
+			CreatedAt:    proc.CreatedAt.Format(time.RFC3339),
+			PID:          info.PID,
+			State:        string(info.State),
+			StartedAt:    info.StartedAt,
 		})
 	}
 
@@ -741,13 +803,8 @@ func (s *Supervisor) Save() error {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	tmpFile := dumpFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
-	}
-
-	if err := os.Rename(tmpFile, dumpFile); err != nil {
-		return fmt.Errorf("failed to rename state file: %w", err)
+	if err := writeStateAtomic(dumpFile, data); err != nil {
+		return err
 	}
 
 	log.Info().Int("count", len(snapshots)).Str("path", dumpFile).Msg("process state saved")
@@ -760,62 +817,58 @@ func (s *Supervisor) Resurrect() error {
 	data, source, err := s.readStateFile()
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Info().Msg("no saved state found")
 			return nil
 		}
-		return fmt.Errorf("failed to read state file: %w", err)
+		return fmt.Errorf("read saved state: %w", err)
 	}
-
-	ctx := context.Background()
-
+	var snapshots []processSnapshot
 	if source == "dump.json" {
-		var snapshots []processSnapshot
 		if err := json.Unmarshal(data, &snapshots); err != nil {
 			return fmt.Errorf("failed to parse dump.json: %w", err)
 		}
-
-		// Restore nextID counter from saved state.
-		maxID := -1
-		for _, snap := range snapshots {
-			if snap.NumericID > maxID {
-				maxID = snap.NumericID
-			}
-		}
-		s.mu.Lock()
-		s.nextID = maxID + 1
-		s.mu.Unlock()
-
-		for _, snap := range snapshots {
-			if _, err := s.AddProcess(ctx, snap.Config); err != nil {
-				log.Warn().Str("name", snap.Config.Name).Err(err).Msg("failed to resurrect process")
-			}
-		}
-		log.Info().Int("count", len(snapshots)).Msg("processes resurrected")
 	} else {
 		var configs []types.ProcessConfig
 		if err := json.Unmarshal(data, &configs); err != nil {
 			return fmt.Errorf("failed to parse state.json: %w", err)
 		}
 		for _, cfg := range configs {
-			if _, err := s.AddProcess(ctx, cfg); err != nil {
-				log.Warn().Str("name", cfg.Name).Err(err).Msg("failed to resurrect process")
-			}
+			snapshots = append(snapshots, processSnapshot{Config: cfg})
 		}
-		log.Info().Int("count", len(configs)).Msg("processes resurrected from legacy state")
 	}
+	// Keep stable numeric IDs and restore dependency order before starting children.
+	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].NumericID < snapshots[j].NumericID })
+	var failures []error
+	for _, snap := range snapshots {
+		s.mu.RLock()
+		_, exists := s.byName[snap.Config.Name]
+		s.mu.RUnlock()
+		if exists {
+			continue
+		}
+		start := snap.State != string(types.StateStopped) && snap.State != string(types.StateStopping)
+		if snap.RunOnRestore != nil {
+			start = *snap.RunOnRestore
+		}
+		_, err := s.addProcess(context.Background(), snap.Config, start, &snap.NumericID)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("restore %q: %w", snap.Config.Name, err))
+			continue
+		}
 
-	return nil
+	}
+	return errors.Join(failures...)
 }
 
 // processSnapshot captures everything needed to persist and restore a process.
 type processSnapshot struct {
-	Config    types.ProcessConfig `json:"config"`
-	NumericID int                 `json:"numeric_id"`
-	Restarts  int                 `json:"restarts"`
-	CreatedAt string              `json:"created_at"`
-	PID       int                 `json:"pid"`
-	State     string              `json:"state"`
-	StartedAt *time.Time          `json:"started_at,omitempty"`
+	RunOnRestore *bool               `json:"run_on_restore,omitempty"`
+	Config       types.ProcessConfig `json:"config"`
+	NumericID    int                 `json:"numeric_id"`
+	Restarts     int                 `json:"restarts"`
+	CreatedAt    string              `json:"created_at"`
+	PID          int                 `json:"pid"`
+	State        string              `json:"state"`
+	StartedAt    *time.Time          `json:"started_at,omitempty"`
 }
 
 // appMetadata is the per-app metadata file format.
@@ -876,7 +929,7 @@ func (s *Supervisor) writeMetadata(name string, snap processSnapshot) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(appDir, "metadata.json"), data, 0o644)
+	return writeStateAtomic(filepath.Join(appDir, "metadata.json"), data)
 }
 
 // stdoutLogPath returns the stdout log file path for an app.

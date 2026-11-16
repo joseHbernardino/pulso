@@ -45,7 +45,8 @@ starting → errored → stopped (exec failure)
 
 - `Dump()`: writes all process configs to `~/.pulso/dump.json`
 - `Resurrect()`: reads `dump.json`, falls back to `state.json` for legacy compat
-- Both use `0o644` file permissions
+- Recovery snapshots and metadata use `0o600`; daemon changes save synchronously.
+- Shutdown removes in-memory entries without overwriting the desired recovery state.
 
 ## Benchmarks
 

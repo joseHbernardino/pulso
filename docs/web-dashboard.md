@@ -33,5 +33,5 @@ do navegador.
 
 Este formulário inicia programas já presentes no servidor. Não envia arquivos
 do computador do visitante. As linguagens e dependências da aplicação precisam
-estar instaladas no servidor. O cadastro não salva automaticamente o estado
-para recuperação após um reinício do daemon.
+estar instaladas no servidor. O daemon salva as alterações automaticamente para recuperação após reinício.
+Para iniciar junto com o Linux, configure o [serviço de inicialização](boot-recovery.md).

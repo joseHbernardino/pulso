@@ -135,6 +135,10 @@ func dataDir() string {
 	return daemon.ResolveDataDir(viper.GetString("daemon.data_dir"))
 }
 
+func daemonSocketPath() string {
+	return daemon.ResolveSocketPath(dataDir(), viper.GetString("daemon.socket_path"))
+}
+
 // daemonClient creates an IPC client for the daemon.
 // If auth is configured, credentials are sent with every request.
 func daemonClient() *daemon.Client {
@@ -181,7 +185,7 @@ func ensureDaemon() (*daemon.Client, error) {
 		_ = os.Setenv("PULSO_CONFIG", cfgFile)
 		defer func() { _ = os.Unsetenv("PULSO_CONFIG") }()
 	}
-	if err := daemon.StartDaemon(); err != nil {
+	if err := daemon.StartDaemonAt(dataDir(), daemonSocketPath()); err != nil {
 		return nil, fmt.Errorf("failed to start daemon: %w", err)
 	}
 	return client, nil

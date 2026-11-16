@@ -138,6 +138,13 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
+	if s.config != nil && s.config.Web.Enabled {
+		if _, _, err := s.startWeb(s.config.Web.Listen); err != nil {
+			_ = s.shutdown()
+			return err
+		}
+	}
+
 	// Wait for signal or context cancellation.
 	for {
 		select {
@@ -735,41 +742,34 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listen := payload.Listen
+	status, addr, err := s.startWeb(payload.Listen)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, ErrorResponse(err))
+		return
+	}
+	resp, _ := DataResponse(map[string]string{"status": status, "addr": addr})
+	httputil.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) startWeb(listen string) (string, string, error) {
 	if listen == "" {
 		listen = "localhost:9615"
 	}
-
-	// Preflight the bind so we fail fast instead of reporting success and then
-	// discovering the address conflict inside the background web server goroutine.
-	probe, err := net.Listen("tcp", listen)
-	if err != nil {
-		httputil.WriteJSON(w, http.StatusInternalServerError, ErrorResponse(fmt.Errorf("failed to bind web listener: %w", err)))
-		return
-	}
-	_ = probe.Close()
-
 	s.webMu.Lock()
 	defer s.webMu.Unlock()
-
-	// Already running — return existing address.
 	if s.webCancel != nil {
-		resp, _ := DataResponse(map[string]string{
-			"status": "already_running",
-			"addr":   s.webAddr,
-		})
-		httputil.WriteJSON(w, http.StatusOK, resp)
-		return
+		return "already_running", s.webAddr, nil
 	}
-
-	// Start the web server in a goroutine.
+	probe, err := net.Listen("tcp", listen)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to bind web listener: %w", err)
+	}
+	_ = probe.Close()
 	webSrv := s.newWebServer(listen)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.webCancel = cancel
 	s.webAddr = listen
-
 	go func() {
-		log.Info().Str("addr", listen).Msg("web server starting (via IPC)")
 		if err := webSrv.Start(ctx); err != nil && ctx.Err() == nil {
 			log.Error().Err(err).Msg("web server error")
 		}
@@ -778,12 +778,7 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 		s.webAddr = ""
 		s.webMu.Unlock()
 	}()
-
-	resp, _ := DataResponse(map[string]string{
-		"status": "started",
-		"addr":   listen,
-	})
-	httputil.WriteJSON(w, http.StatusOK, resp)
+	return "started", listen, nil
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {

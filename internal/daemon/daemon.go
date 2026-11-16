@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -34,6 +35,14 @@ func DefaultDataDir() string {
 // ResolveDataDir returns cfgDir if non-empty, otherwise DefaultDataDir().
 func ResolveDataDir(cfgDir string) string {
 	if cfgDir != "" {
+		if cfgDir == "~" {
+			home, _ := os.UserHomeDir()
+			return home
+		}
+		if strings.HasPrefix(cfgDir, "~/") {
+			home, _ := os.UserHomeDir()
+			cfgDir = filepath.Join(home, strings.TrimPrefix(cfgDir, "~/"))
+		}
 		return cfgDir
 	}
 	return DefaultDataDir()
@@ -42,19 +51,20 @@ func ResolveDataDir(cfgDir string) string {
 // ResolveSocketPath returns cfgSocket if non-empty, otherwise <dataDir>/tmp/pulso.sock.
 func ResolveSocketPath(dataDir, cfgSocket string) string {
 	if cfgSocket != "" {
-		return cfgSocket
+		return ResolveDataDir(cfgSocket)
 	}
 	return filepath.Join(dataDir, "tmp", "pulso.sock")
 }
 
 // StartDaemon forks the daemon process and waits for it to become ready.
-func StartDaemon() error {
+func StartDaemon() error { return StartDaemonAt(DefaultDataDir(), DefaultSocketPath()) }
+func StartDaemonAt(dataDir, socketPath string) error {
 	bin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	cmd := exec.Command(bin, "daemon", "run")
+	cmd := exec.Command(bin, "--data-dir", dataDir, "daemon", "run", "--socket-path", socketPath)
 	cmd.Stdout = nil // daemon manages its own logging
 	cmd.Stderr = nil // daemon manages its own logging
 	setProcessGroup(cmd)
@@ -74,7 +84,6 @@ func StartDaemon() error {
 	log.Debug().Int("pid", cmd.Process.Pid).Msg("daemon process started")
 
 	// Wait for the socket to become available.
-	socketPath := DefaultSocketPath()
 	client := NewClient(socketPath)
 	defer client.Close()
 	deadline := time.Now().Add(5 * time.Second)
@@ -102,18 +111,47 @@ func RunDaemon(socketPath string, dataDir string, cfg *types.PulsoConfig, config
 		return fmt.Errorf("failed to create tmp directory: %w", err)
 	}
 
+	probe := NewClient(socketPath)
+	alive := probe.IsAlive()
+	probe.Close()
+	if alive {
+		return fmt.Errorf("another daemon is already serving this socket")
+	}
+
+	lock, err := lockDaemon(filepath.Join(dataDir, "tmp", "daemon.lock"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	// Create metrics collector — always running so all processes are tracked.
 	metricsInterval := cfg.Metrics.MetricsInterval()
 	col := metrics.NewCollector()
 	col.Start(metricsInterval)
+	defer col.Stop()
 
 	// Create supervisor with options from config.
 	sup := supervisor.New(supervisor.Options{
+		AutoSave:         true,
 		LogDir:           dataDir,
 		Defaults:         cfg.Defaults,
 		MetricsCollector: col,
 		MetricsInterval:  metricsInterval,
 	})
+
+	defer func() {
+		if err := sup.Shutdown(); err != nil {
+			log.Error().Err(err).Msg("close supervisor")
+		}
+	}()
+	// Restore before admitting new commands or autostarting config entries.
+	if err := sup.Resurrect(); err != nil {
+		return fmt.Errorf("restore saved services: %w", err)
+	}
+	if len(sup.List()) > 0 {
+		if err := sup.Save(); err != nil {
+			return fmt.Errorf("commit recovered services: %w", err)
+		}
+	}
 
 	// PID file in tmp directory.
 	pidDir := filepath.Join(dataDir, "tmp")
@@ -184,9 +222,16 @@ func startConfigProcesses(sup *supervisor.Supervisor, cfg *types.PulsoConfig) {
 		return
 	}
 
+	existing := make(map[string]bool)
+	for _, proc := range sup.List() {
+		existing[proc.Name] = true
+	}
 	var toStart []types.ProcessConfig
 	for _, p := range cfg.Processes {
 		if p.Autostart {
+			if existing[p.Name] {
+				continue
+			}
 			toStart = append(toStart, p)
 		}
 	}

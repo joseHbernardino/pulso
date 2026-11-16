@@ -76,7 +76,7 @@ in
       };
 
       Service = {
-        ExecStart = "${lib.getExe cfg.package} daemon start --config ${config.xdg.configHome}/pulso/pulso.yaml";
+        ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.settings.daemon.data_dir} daemon run --web --config ${config.xdg.configHome}/pulso/pulso.yaml";
         Restart = "on-failure";
         RestartSec = "5s";
       };

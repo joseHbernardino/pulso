@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -12,6 +13,9 @@ func newStartupCmd() *cobra.Command {
 	var (
 		platform  string
 		uninstall bool
+		system    bool
+		printOnly bool
+		webListen string
 	)
 
 	cmd := &cobra.Command{
@@ -21,12 +25,64 @@ func newStartupCmd() *cobra.Command {
 Supports systemd (Linux) and launchd (macOS).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if uninstall {
+				if platform == "systemd" {
+					return uninstallSystemdScope(system)
+				}
 				return uninstallService(platform)
+			}
+			if platform == "systemd" {
+				exe, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				var configPath string
+				if cfgFile != "" {
+					configPath, err = filepath.Abs(cfgFile)
+					if err != nil {
+						return err
+					}
+				}
+				unit, err := renderSystemd(exe, cwd, dataDir(), configPath, os.Getenv("PATH"), webListen, system)
+				if err != nil {
+					return err
+				}
+				if printOnly {
+					_, err = fmt.Fprint(cmd.OutOrStdout(), unit)
+					return err
+				}
+				dir, err := systemdUnitDir(system)
+				if err != nil {
+					return err
+				}
+				if err = os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+				target := filepath.Join(dir, "pulso.service")
+				if err = os.WriteFile(target, []byte(unit), 0o644); err != nil {
+					return err
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Serviço instalado em %s\n", target)
+				control := "systemctl"
+				if !system {
+					control += " --user"
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Execute:\n  %s daemon-reload\n  %s enable --now pulso.service\n", control, control)
+				if !system {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Para iniciar sem login, um administrador deve executar: loginctl enable-linger <seu-usuario>")
+				}
+				return nil
 			}
 			return installService(platform)
 		},
 	}
 
+	cmd.Flags().BoolVar(&system, "system", os.Geteuid() == 0, "Install a system-wide unit (requires root); use --system=false for a user unit")
+	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the unit without installing it")
+	cmd.Flags().StringVar(&webListen, "web-listen", "127.0.0.1:9615", "Dashboard address after boot")
 	cmd.Flags().StringVar(&platform, "platform", detectInitSystem(), "init system: systemd, launchd")
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "uninstall the startup service")
 
@@ -66,43 +122,88 @@ func uninstallService(platform string) error {
 	}
 }
 
-func installSystemd() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("finding executable: %w", err)
+// systemd arguments must retain spaces and literal percent signs without shell expansion.
+func systemdQuote(value string) (string, error) {
+	if strings.ContainsAny(value, "\r\n\x00") {
+		return "", fmt.Errorf("service paths cannot contain line breaks")
 	}
-
-	unit := fmt.Sprintf(`[Unit]
-Description=Pulso Process Manager
-After=network.target
+	value = strings.ReplaceAll(value, "%", "%%")
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`, nil
+}
+func renderSystemd(exe, cwd, dir, configPath, path, listen string, system bool) (string, error) {
+	args := []string{exe, "--data-dir", dir, "daemon", "run", "--web", "--web-listen", listen}
+	if configPath != "" {
+		args = append(args, "--config", configPath)
+	}
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		q, err := systemdQuote(arg)
+		if err != nil {
+			return "", err
+		}
+		quoted = append(quoted, strings.ReplaceAll(q, "$", "$$"))
+	}
+	_, err := systemdQuote(cwd)
+	if err != nil {
+		return "", err
+	}
+	wd := strings.ReplaceAll(cwd, "%", "%%")
+	env, err := systemdQuote("PATH=" + path)
+	if err != nil {
+		return "", err
+	}
+	target := "default.target"
+	if system {
+		target = "multi-user.target"
+	}
+	return fmt.Sprintf(`[Unit]
+Description=Pulso Application Supervisor
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=%s daemon run
-Restart=on-failure
+WorkingDirectory=%s
+ExecStart=%s
+Environment=%s
+Restart=always
 RestartSec=5
-Environment=PULSO_DAEMON=1
+TimeoutStopSec=120
+KillMode=control-group
+UMask=0077
+LimitNOFILE=65536
 
 [Install]
-WantedBy=default.target
-`, exe)
-
-	unitName := "pulso.service"
-	configDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
-
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		return fmt.Errorf("creating systemd dir: %w", err)
+WantedBy=%s
+`, wd, strings.Join(quoted, " "), env, target), nil
+}
+func systemdUnitDir(system bool) (string, error) {
+	if system {
+		if os.Geteuid() != 0 {
+			return "", fmt.Errorf("system installation requires root")
+		}
+		return "/etc/systemd/system", nil
 	}
-
-	unitPath := filepath.Join(configDir, unitName)
-	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
-		return fmt.Errorf("writing unit file: %w", err)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
 	}
-
-	_, _ = fmt.Fprintf(os.Stdout, "Installed systemd user service to %s\n", unitPath)
-	_, _ = fmt.Fprintln(os.Stdout, "Run the following to enable and start:")
-	_, _ = fmt.Fprintln(os.Stdout, "  systemctl --user daemon-reload")
-	_, _ = fmt.Fprintln(os.Stdout, "  systemctl --user enable --now pulso.service")
+	return filepath.Join(home, ".config/systemd/user"), nil
+}
+func installSystemd() error { return fmt.Errorf("use pulso startup --platform systemd") }
+func uninstallSystemdScope(system bool) error {
+	dir, err := systemdUnitDir(system)
+	if err != nil {
+		return err
+	}
+	control := "systemctl"
+	if !system {
+		control += " --user"
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "Execute:\n  %s disable --now pulso.service\n  rm %s\n  %s daemon-reload\n", control, filepath.Join(dir, "pulso.service"), control)
 	return nil
 }
 

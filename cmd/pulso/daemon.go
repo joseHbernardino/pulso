@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -30,7 +31,7 @@ func newDaemonCmd() *cobra.Command {
 			if cfgFile != "" {
 				_ = os.Setenv("PULSO_CONFIG", cfgFile)
 			}
-			if err := daemon.StartDaemon(); err != nil {
+			if err := daemon.StartDaemonAt(dataDir(), daemonSocketPath()); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "[Pulso] Failed to start daemon: %v\n", err)
 				return err
 			}
@@ -50,7 +51,7 @@ func newDaemonCmd() *cobra.Command {
 				return nil
 			}
 
-			pidFile := daemon.NewPIDFile(daemon.DefaultDataDir())
+			pidFile := daemon.NewPIDFile(filepath.Join(dataDir(), "tmp"))
 			pid, _ := pidFile.Read()
 			if pid > 0 {
 				proc, err := os.FindProcess(pid)
@@ -83,9 +84,9 @@ func newDaemonCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := daemonClient()
 			if client.IsAlive() {
-				pidFile := daemon.NewPIDFile(daemon.DefaultDataDir())
+				pidFile := daemon.NewPIDFile(filepath.Join(dataDir(), "tmp"))
 				pid, _ := pidFile.Read()
-				socket := daemon.DefaultSocketPath()
+				socket := daemonSocketPath()
 				_, _ = fmt.Fprintf(os.Stdout, "[Pulso] Daemon is running (pid: %d, socket: %s)\n", pid, socket)
 			} else {
 				_, _ = fmt.Fprintln(os.Stdout, "[Pulso] Daemon is not running")
@@ -101,7 +102,7 @@ func newDaemonCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := daemonClient()
 			if client.IsAlive() {
-				pidFile := daemon.NewPIDFile(daemon.DefaultDataDir())
+				pidFile := daemon.NewPIDFile(filepath.Join(dataDir(), "tmp"))
 				pid, _ := pidFile.Read()
 				if pid > 0 {
 					proc, err := os.FindProcess(pid)
@@ -122,7 +123,7 @@ func newDaemonCmd() *cobra.Command {
 			if cfgFile != "" {
 				_ = os.Setenv("PULSO_CONFIG", cfgFile)
 			}
-			if err := daemon.StartDaemon(); err != nil {
+			if err := daemon.StartDaemonAt(dataDir(), daemonSocketPath()); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "[Pulso] Failed to start daemon: %v\n", err)
 				return err
 			}
@@ -165,25 +166,43 @@ func newDaemonCmd() *cobra.Command {
 	})
 
 	// daemon run (internal - runs daemon in foreground, used when forking)
-	cmd.AddCommand(&cobra.Command{
+	var socketOverride string
+	var webEnabled bool
+	var webListen string
+	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the daemon in the foreground (internal)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			socketPath := daemon.DefaultSocketPath()
-			dataDir := daemon.DefaultDataDir()
+			resolvedDir := dataDir()
+			socketPath := daemonSocketPath()
+			if socketOverride != "" {
+				socketPath = socketOverride
+			}
 
 			// Load config if available (PULSO_CONFIG env from CLI, or search CWD).
 			var cfg *types.PulsoConfig
-			configPath := os.Getenv("PULSO_CONFIG")
+			configPath := cfgFile
+			if configPath == "" {
+				configPath = os.Getenv("PULSO_CONFIG")
+			}
 			cfg, err := config.Load(configPath)
 			if err != nil {
-				cfg = &types.PulsoConfig{}
-				config.ApplyDefaults(cfg)
+				return fmt.Errorf("load daemon configuration: %w", err)
 			}
 
-			return daemon.RunDaemon(socketPath, dataDir, cfg, configPath)
+			if webEnabled {
+				cfg.Web.Enabled = true
+			}
+			if webListen != "" {
+				cfg.Web.Listen = webListen
+			}
+			return daemon.RunDaemon(socketPath, resolvedDir, cfg, configPath)
 		},
-	})
+	}
+	runCmd.Flags().StringVar(&socketOverride, "socket-path", "", "Unix socket override")
+	runCmd.Flags().BoolVar(&webEnabled, "web", false, "Start the web dashboard alongside the daemon")
+	runCmd.Flags().StringVar(&webListen, "web-listen", "", "Web dashboard listen address")
+	cmd.AddCommand(runCmd)
 
 	_ = config.Load
 	return cmd
