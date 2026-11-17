@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"pulso.local/pulso/internal/auth"
+	"pulso.local/pulso/internal/containerupdate"
 	"pulso.local/pulso/internal/supervisor"
 	"pulso.local/pulso/pkg/types"
 )
@@ -24,13 +26,15 @@ var frontendFS embed.FS
 
 // Server is the web UI + API server.
 type Server struct {
-	paths      pathResolver
-	supervisor *supervisor.Supervisor
-	listen     string
-	auth       auth.Authenticator
-	sessions   *auth.SessionStore
-	users      *auth.UserStore
-	hub        *WSHub
+	updateClient    *containerupdate.Client
+	updateDirectory string
+	paths           pathResolver
+	supervisor      *supervisor.Supervisor
+	listen          string
+	auth            auth.Authenticator
+	sessions        *auth.SessionStore
+	users           *auth.UserStore
+	hub             *WSHub
 
 	loginMu       sync.Mutex
 	loginFailures map[string][]time.Time
@@ -65,7 +69,7 @@ func NewServerWithAuth(sup *supervisor.Supervisor, listen string, authenticator 
 		sessions = auth.NewSessionStore(auth.DefaultSessionTTL)
 	}
 
-	return &Server{
+	server := &Server{
 		supervisor:    sup,
 		paths:         pathResolverFromEnvironment(),
 		listen:        listen,
@@ -74,6 +78,11 @@ func NewServerWithAuth(sup *supervisor.Supervisor, listen string, authenticator 
 		hub:           NewWSHub(),
 		loginFailures: make(map[string][]time.Time),
 	}
+	if dir := os.Getenv("PULSO_UPDATE_DIR"); dir != "" {
+		server.updateDirectory = dir
+		server.updateClient = containerupdate.NewClient(dir)
+	}
+	return server
 }
 
 // NewServer creates a new web server (legacy, uses AuthConfig).
@@ -136,6 +145,10 @@ func (s *Server) handler() (http.Handler, error) {
 		r.Post("/env-files/preview", s.handlePreviewEnv)
 		r.Post("/filesystem/browse", s.handleBrowsePaths)
 		r.Get("/system/metrics", s.handleSystemMetrics)
+		r.Get("/system/version", s.handleVersion)
+		r.Get("/system/updates", s.handleUpdateStatus)
+		r.Post("/system/updates/check", s.handleUpdateStatus)
+		r.Post("/system/updates", s.handleApplyUpdate)
 		r.Get("/users", s.handleListUsers)
 		r.Post("/users", s.handleCreateUser)
 		r.Patch("/users/{id}", s.handleUpdateUser)

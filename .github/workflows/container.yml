@@ -12,8 +12,11 @@ permissions:
 
 jobs:
   check:
-    name: Build and test container
+    name: Build and test container (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [runtime, runtime-python311]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -23,24 +26,46 @@ jobs:
           docker compose -f compose.yaml -f compose.build.yaml config --quiet
           docker compose -f compose.yaml -f compose.host.yaml config --quiet
           docker compose -f compose.yaml -f compose.build.yaml -f compose.host.yaml config --quiet
+          docker compose -f compose.yaml -f compose.update.yaml config --quiet
+          docker compose -f compose.yaml -f compose.host.yaml -f compose.update.yaml config --quiet
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
           tags: pulso:smoke
-          cache-from: type=gha,scope=pulso-container
-          cache-to: type=gha,mode=max,scope=pulso-container
+          target: ${{ matrix.target }}
+          build-args: |
+            VERSION=dev
+            REVISION=${{ github.sha }}
+            RELEASE_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha,scope=pulso-container-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }}
       - name: Test login, dotenv and recovery after container replacement
         run: |
           python3 scripts/docker-smoke.py pulso:smoke
           python3 scripts/docker-host-smoke.py pulso:smoke
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.target == 'runtime'
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test portal image update and automatic rollback
+        if: matrix.target == 'runtime'
+        run: bash scripts/docker-update-smoke.sh pulso:smoke
 
   publish:
-    name: Publish Linux images
+    name: Publish Linux images (${{ matrix.target }})
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: check
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: runtime
+            suffix: ""
+          - target: runtime-python311
+            suffix: -python311
     permissions:
       contents: read
       packages: write
@@ -53,13 +78,14 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
+          IMAGE_SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
           image="ghcr.io/${REPOSITORY,,}"
-          tags="$image:$RELEASE_TAG"
+          tags="$image:$RELEASE_TAG$IMAGE_SUFFIX"
           if [[ "$RELEASE_TAG" != *-* ]]; then
-            tags="$tags,$image:latest"
+            tags="$tags,$image:latest$IMAGE_SUFFIX"
           fi
           printf 'tags=%s\n' "$tags" >> "$GITHUB_OUTPUT"
           printf 'build_time=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -74,6 +100,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          target: ${{ matrix.target }}
           tags: ${{ steps.image.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -81,9 +108,10 @@ jobs:
             org.opencontainers.image.version=${{ github.ref_name }}
           build-args: |
             VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
             BUILD_TIME=${{ steps.image.outputs.build_time }}
             RELEASE_REPOSITORY=${{ github.repository }}
-          cache-from: type=gha,scope=pulso-container
-          cache-to: type=gha,mode=max,scope=pulso-container
+          cache-from: type=gha,scope=pulso-container-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }}
           provenance: mode=max
           sbom: true

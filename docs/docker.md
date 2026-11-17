@@ -384,6 +384,13 @@ Instalar pacotes manualmente em um contêiner em execução perde essas alteraç
 quando ele é recriado. Use o venv da imagem no script ou no campo **Interpretador**;
 para um script shell que cria seu próprio venv, ajuste essa lógica no script.
 
+## Atualização pelo portal
+
+A versão instalada aparece no cabeçalho. Administradores podem habilitar a troca
+da imagem pelo painel com `compose.update.yaml`, usando uma imagem publicada na
+tag `latest` ou `latest-python311`. O serviço auxiliar preserva a configuração e
+valida a recuperação antes de concluir. Veja a [configuração e o fluxo de atualização](updates.md).
+
 ## Operação e backup
 
 ```bash

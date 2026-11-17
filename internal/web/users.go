@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 	"pulso.local/pulso/internal/auth"
+	"pulso.local/pulso/internal/containerupdate"
 )
 
 type sessionContextKey struct{}
@@ -56,6 +57,13 @@ func (s *Server) authorizeWeb(next http.Handler) http.Handler {
 			}
 			if (mutation || strings.HasSuffix(r.URL.Path, "/settings") || r.URL.Path == "/users" || strings.HasPrefix(r.URL.Path, "/api/v1/users")) && session.Role != auth.RoleAdmin {
 				writeJSON(w, http.StatusForbidden, loginResponse{Error: "administrator permission required"})
+				return
+			}
+		}
+		if mutation && s.updateDirectory != "" && !isPublicPath(r.URL.Path) && !strings.HasPrefix(r.URL.Path, "/api/v1/system/updates") {
+			status, err := containerupdate.LatestStatus(s.updateDirectory)
+			if err != nil || (status != nil && status.Active()) {
+				writeJSON(w, 503, loginResponse{Error: "O Pulso está sendo atualizado. Aguarde o retorno antes de alterar aplicações ou usuários."})
 				return
 			}
 		}

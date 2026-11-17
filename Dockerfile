@@ -9,18 +9,25 @@ COPY pkg ./pkg
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
+ARG REVISION=unknown
 ARG BUILD_TIME=unknown
 ARG RELEASE_REPOSITORY=
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -buildvcs=false -trimpath \
-    -ldflags="-s -w -X pulso.local/pulso/internal/version.Version=${VERSION} -X pulso.local/pulso/internal/version.BuildTime=${BUILD_TIME} -X pulso.local/pulso/internal/version.ReleaseRepository=${RELEASE_REPOSITORY}" \
+    -ldflags="-s -w -X pulso.local/pulso/internal/version.Version=${VERSION} -X pulso.local/pulso/internal/version.Revision=${REVISION} -X pulso.local/pulso/internal/version.BuildTime=${BUILD_TIME} -X pulso.local/pulso/internal/version.ReleaseRepository=${RELEASE_REPOSITORY}" \
     -o /out/pulso ./cmd/pulso
 
 FROM python:3.11-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS python311
 
 FROM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS runtime-base
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl python3 python3-venv tini \
     && rm -rf /var/lib/apt/lists/* \

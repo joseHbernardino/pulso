@@ -9,6 +9,7 @@
   loading(true);
   fetch("/api/auth/status",{cache:"no-store"}).then(async response=>{
     if(!response.ok)throw new Error();const state=await response.json();
+    if(state.build){const build=state.build;const revision=build.revision&&!["unknown","local"].includes(build.revision)?" · "+build.revision.slice(0,8):"";document.getElementById("login-version").textContent="Pulso "+build.version+revision;}
     if(state.authenticated){redirect();return;}
     setup=Boolean(state.setup_required);ready=true;
     if(setup){document.querySelector(".login-header h1").textContent="Configure seu Pulso";document.querySelector(".login-header p").textContent="Crie a primeira conta de administrador.";document.getElementById("setup-token-group").hidden=false;document.getElementById("setup-confirm-group").hidden=false;document.getElementById("setup-token").required=true;document.getElementById("setup-confirm").required=true;password.minLength=12;password.autocomplete="new-password";document.querySelector(".btn-text").textContent="Criar administrador";}

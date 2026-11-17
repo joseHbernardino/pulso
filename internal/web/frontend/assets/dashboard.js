@@ -206,7 +206,7 @@
       });
 
       document.addEventListener("keydown", (e) => {
-        if (document.getElementById("application-dialog").open) return;
+        if (document.querySelector("dialog[open]")) return;
         if (e.key === "Tab" && document.getElementById("confirm-overlay").classList.contains("visible")) {
           const buttons = [...document.querySelectorAll("#confirm-dialog button")];
           const first = buttons[0], last = buttons[buttons.length - 1];

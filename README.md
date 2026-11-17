@@ -98,6 +98,10 @@ pulso doctor
 
 ## Docker
 
+The dashboard displays the installed version. Administrators can enable
+[container image updates from the portal](docs/updates.md), including health checks
+and automatic rollback when the replacement fails.
+
 Run Pulso as a Docker service with persistent accounts, process recovery and
 application files. The image includes Python 3 and the Node.js version pinned in
 the Dockerfile. Applications run inside the Pulso container, with projects mounted

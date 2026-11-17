@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"pulso.local/pulso/internal/auth"
+	"pulso.local/pulso/internal/version"
 )
 
 const (
@@ -40,11 +41,12 @@ type loginResponse struct {
 
 // authStatusResponse is the JSON response for auth status.
 type authStatusResponse struct {
-	Authenticated bool   `json:"authenticated"`
-	Username      string `json:"username,omitempty"`
-	Mode          string `json:"mode"`
-	Role          string `json:"role,omitempty"`
-	SetupRequired bool   `json:"setup_required"`
+	Build         version.Info `json:"build"`
+	Authenticated bool         `json:"authenticated"`
+	Username      string       `json:"username,omitempty"`
+	Mode          string       `json:"mode"`
+	Role          string       `json:"role,omitempty"`
+	SetupRequired bool         `json:"setup_required"`
 }
 
 // WebAuthMiddleware returns an http middleware that enforces web-based authentication.
@@ -216,7 +218,8 @@ func (s *Server) handleAuthStatusAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := authStatusResponse{
-		Mode: s.authMode(),
+		Build: version.Current(),
+		Mode:  s.authMode(),
 	}
 	if s.users != nil {
 		ready, err := s.users.Initialized()

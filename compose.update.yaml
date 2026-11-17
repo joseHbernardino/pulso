@@ -1,0 +1,45 @@
+# Enable image updates from the portal. The companion alone receives Docker Engine access.
+# Add this file LAST, after compose.host.yaml if that override is in use.
+services:
+  pulso:
+    environment:
+      PULSO_UPDATE_DIR: /var/run/pulso-update
+    volumes:
+      - pulso_updates:/var/run/pulso-update:ro
+  pulso-updater:
+    image: ${PULSO_UPDATER_IMAGE:-${PULSO_IMAGE:-ghcr.io/josehbernardino/pulso:latest}}
+    user: "0:0"
+    entrypoint: [/usr/bin/tini, --, /usr/local/bin/pulso]
+    command: [container-updater, serve]
+    environment:
+      PULSO_UPDATE_DIR: /var/run/pulso-update
+      PULSO_UPDATE_IMAGE: ${PULSO_UPDATE_IMAGE:-ghcr.io/josehbernardino/pulso}
+      PULSO_RELEASE_REPOSITORY: ${PULSO_RELEASE_REPOSITORY:-joseHbernardino/pulso}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=32m
+    volumes:
+      - pulso_updates:/var/run/pulso-update
+      - type: bind
+        source: ${PULSO_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true, label:disable]
+    healthcheck:
+      test: [CMD, /usr/local/bin/pulso, container-updater, health]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  pulso_updates:

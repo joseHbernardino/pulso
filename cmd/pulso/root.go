@@ -65,6 +65,7 @@ Manage processes through CLI, TUI, Web UI, or MCP interfaces.`,
 	root.AddCommand(newResurrectCmd())
 	root.AddCommand(newStartupCmd())
 	root.AddCommand(newSelfUpdateCmd())
+	root.AddCommand(newContainerUpdaterCmd())
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newTUICmd())
 	root.AddCommand(newWebCmd())

@@ -7,3 +7,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: ${PULSO_BUILD_TARGET:-runtime}
+      args:
+        VERSION: ${PULSO_BUILD_VERSION:-dev}
+        REVISION: ${PULSO_BUILD_REVISION:-unknown}
+        BUILD_TIME: ${PULSO_BUILD_TIME:-unknown}
+        RELEASE_REPOSITORY: ${PULSO_RELEASE_REPOSITORY:-}

@@ -92,6 +92,15 @@ func TestPersistentWebRoles(t *testing.T) {
 	if !strings.Contains(status, `"role":"view"`) {
 		t.Fatal("viewer role missing")
 	}
+	versionBody := send("GET", "/api/v1/system/version", "", viewSession.Token, "", 200)
+	if !strings.Contains(versionBody, `"version"`) {
+		t.Fatal("installed version missing for viewer")
+	}
+	send("GET", "/api/v1/system/updates", "", viewSession.Token, "", 403)
+	send("POST", "/api/v1/system/updates/check", `{}`, viewSession.Token, "", 403)
+	send("POST", "/api/v1/system/updates", `{"version":"v1.0.0"}`, viewSession.Token, "", 403)
+	send("POST", "/api/v1/system/updates", `{"version":"v1.0.0"}`, adminSession.Token, "https://attacker.example", 403)
+	send("GET", "/api/v1/system/updates", "", adminSession.Token, "", 200)
 	send("GET", "/api/v1/users", "", viewSession.Token, "", 403)
 	send("GET", "/users", "", viewSession.Token, "", 403)
 	send("GET", "/api/v1/processes/"+process.ID+"/settings", "", viewSession.Token, "", 403)
