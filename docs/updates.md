@@ -145,6 +145,14 @@ Para validar em desenvolvimento, depois de compilar `pulso:smoke`:
 bash scripts/docker-update-smoke.sh pulso:smoke
 ```
 
+Esse teste requer root ou `sudo` sem senha. O script eleva somente a execução do
+teste Go, que cria e lê arquivos privados pertencentes ao UID 10001 do contêiner.
+As compilações continuam no usuário que chamou o script, preservando o builder
+Buildx selecionado. O [runner Ubuntu do GitHub Actions](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges)
+já oferece esse `sudo`.
+Esse requisito é do teste de integração; o portal continua executando como
+usuário `pulso` dentro do contêiner.
+
 O teste usa fixtures descartáveis para substituir o Pulso e o auxiliar, verificar
 versão, sessão, porta, aplicações ativas/pausadas e provocar o retorno automático
 após uma imagem que encerra com erro, uma dependência ausente e a interrupção

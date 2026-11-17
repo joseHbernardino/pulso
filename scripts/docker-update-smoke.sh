@@ -2,6 +2,17 @@
 # Run after building pulso:smoke. All state is confined to disposable fixtures.
 set -euo pipefail
 base_image="${1:-pulso:smoke}"
+go_bin="$(command -v go)"
+test_runner=(env)
+# Only the integration process needs root: it manages private files belonging to
+# the container's UID 10001. Buildx must retain the invoking user's builder/config.
+if (( EUID != 0 )); then
+  if ! command -v sudo >/dev/null || ! sudo -n -- true; then
+    printf '%s\n' 'Docker update integration requires root or passwordless sudo for its UID 10001 fixtures.' >&2
+    exit 1
+  fi
+  test_runner=(sudo -n -- env)
+fi
 test_prefix="pulso-update-smoke-$$"
 fixture_dir="$(mktemp -d)"
 cleanup() {
@@ -35,9 +46,13 @@ docker buildx build --load --file "$fixture_dir/Dockerfile" --target update-smok
   --build-arg VERSION=v0.0.3 -t "$test_prefix:bad" .
 docker buildx build --load --file "$fixture_dir/Dockerfile" --target update-smoke-missing-runtime \
   --build-arg VERSION=v0.0.3 -t "$test_prefix:missing-runtime" .
-PULSO_UPDATE_OLD_IMAGE="$base_image" \
-PULSO_UPDATE_NEW_IMAGE="$test_prefix:new" \
-PULSO_UPDATE_NEXT_IMAGE="$test_prefix:next" \
-PULSO_UPDATE_BAD_IMAGE="$test_prefix:bad" \
-PULSO_UPDATE_MISSING_RUNTIME_IMAGE="$test_prefix:missing-runtime" \
-go test -race -count=1 -tags integration -timeout 240s ./internal/containerupdate -run TestDockerUpdateAndRollback -v
+"${test_runner[@]}" \
+  PATH="$PATH" \
+  GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" \
+  DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" \
+  PULSO_UPDATE_OLD_IMAGE="$base_image" \
+  PULSO_UPDATE_NEW_IMAGE="$test_prefix:new" \
+  PULSO_UPDATE_NEXT_IMAGE="$test_prefix:next" \
+  PULSO_UPDATE_BAD_IMAGE="$test_prefix:bad" \
+  PULSO_UPDATE_MISSING_RUNTIME_IMAGE="$test_prefix:missing-runtime" \
+  "$go_bin" test -race -count=1 -tags integration -timeout 240s ./internal/containerupdate -run TestDockerUpdateAndRollback -v

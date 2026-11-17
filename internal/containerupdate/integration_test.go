@@ -25,6 +25,9 @@ func TestDockerUpdateAndRollback(t *testing.T) {
 	if oldImage == "" || newImage == "" || nextImage == "" || badImage == "" {
 		t.Skip("set the four PULSO_UPDATE_*_IMAGE variables")
 	}
+	if os.Geteuid() != 0 {
+		t.Fatal("Docker update integration requires root to manage UID 10001 fixtures; use scripts/docker-update-smoke.sh with passwordless sudo")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	d := NewEngine("/var/run/docker.sock")
