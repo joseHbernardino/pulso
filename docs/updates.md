@@ -150,3 +150,17 @@ versão, sessão, porta, aplicações ativas/pausadas e provocar o retorno autom
 após uma imagem que encerra com erro, uma dependência ausente e a interrupção
 do processo de atualização. A consulta à release e o download são
 substituídos por imagens locais no teste; a troca usa a API real do Docker.
+
+Para reproduzir o isolamento do builder usado no GitHub Actions, execute com o
+driver `docker-container` (Go e o plugin Buildx precisam estar disponíveis):
+
+```bash
+docker buildx create --name pulso-ci-check --driver docker-container
+docker buildx build --builder pulso-ci-check --load -t pulso:smoke .
+BUILDX_BUILDER=pulso-ci-check bash scripts/docker-update-smoke.sh pulso:smoke
+docker buildx rm pulso-ci-check
+```
+
+As imagens de teste derivam do estágio `runtime` dentro da própria definição de
+compilação. Assim, o builder isolado resolve as etapas sem precisar encontrar
+tags locais do daemon em um registro externo.
