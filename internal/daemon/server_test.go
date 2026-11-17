@@ -334,13 +334,13 @@ func TestTailLines(t *testing.T) {
 			name:   "n equals number of newlines",
 			input:  "a\nb\nc\n",
 			n:      3,
-			expect: "b\nc\n",
+			expect: "a\nb\nc\n",
 		},
 		{
 			name:   "more newlines than n",
 			input:  "a\nb\nc\nd\ne\nf\n",
 			n:      3,
-			expect: "e\nf\n",
+			expect: "d\ne\nf\n",
 		},
 		{
 			name:   "single trailing newline n=1",
@@ -367,22 +367,22 @@ func TestTailLines(t *testing.T) {
 			expect: "c",
 		},
 		{
-			name:   "two lines n=1",
+			name:   "three lines n=1",
 			input:  "a\nb\nc\n",
 			n:      1,
-			expect: "a\nb\nc\n",
+			expect: "c\n",
 		},
 		{
-			name:   "two lines n=2",
+			name:   "three lines n=2",
 			input:  "a\nb\nc\n",
 			n:      2,
-			expect: "c\n",
+			expect: "b\nc\n",
 		},
 		{
 			name:   "multi line n=2",
 			input:  "a\nb\nc\nd\ne\nf\n",
 			n:      2,
-			expect: "f\n",
+			expect: "e\nf\n",
 		},
 	}
 

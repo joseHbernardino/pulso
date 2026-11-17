@@ -89,6 +89,34 @@ def main():
         password = "Smoke-A1!" + uuid.uuid4().hex
         api("POST", "/api/auth/setup", {"token": token, "username": "smokeadmin", "password": password})
         api("POST", "/api/auth/login", {"username": "smokeadmin", "password": password})
+        # Failure diagnostics must work even when stdout is empty or output has no newline.
+        for app_name, command, code, message in [
+            ("stderr-crash", "printf 'missing runtime: python3.11' >&2; exit 127", 127, "missing runtime: python3.11"),
+            ("silent-crash", "exit 42", 42, ""),
+        ]:
+            failed = api("POST", "/api/v1/processes", {
+                "name": app_name, "runtime": "process", "entrypoint": "sh", "args": ["-c", command],
+                "cwd": "/apps", "restart_policy": "never",
+            })
+            failure_path = "/api/v1/processes/" + failed["id"]
+            wait_until(lambda: api("GET", failure_path).get("last_failure"), "recorded failure")
+            details = api("GET", failure_path + "/logs")
+            assert details["process"]["exit_code"] == code
+            assert details["process"]["last_failure"]["exit_code"] == code
+            assert details["stdout"] == "" and message in details["logs"]
+            api("DELETE", failure_path)
+        restarted = api("POST", "/api/v1/processes", {
+            "name": "restart-once", "runtime": "process", "entrypoint": "sh",
+            "args": ["-c", "if [ ! -f /apps/restart-marker ]; then touch /apps/restart-marker; exit 7; fi; exec sleep 3600"],
+            "cwd": "/apps", "restart_policy": "on-failure", "min_uptime": 1000000000,
+        })
+        restart_path = "/api/v1/processes/" + restarted["id"]
+        wait_until(lambda: api("GET", restart_path).get("last_event") == "restarted", "automatic restart")
+        time.sleep(0.5)
+        running = api("GET", restart_path)
+        assert running["state"] == "running" and running["restarts"] == 1
+        assert running["last_failure"]["exit_code"] == 7
+        api("DELETE", restart_path)
         # All values and credentials below are disposable test data.
         script = (
             "import os,time\nfrom pathlib import Path\n"
@@ -154,7 +182,7 @@ def main():
         wait_until(lambda: marker("third|saved"), "recovery after SIGKILL")
         remove()
         print(json.dumps({"image": image, "non_root": True, "login_persisted": True,
-                          "dotenv_editor": True, "host_path_mapping": True, "file_browser": True, "replacement_recovery": True, "crash_recovery": True}))
+                          "dotenv_editor": True, "host_path_mapping": True, "file_browser": True, "replacement_recovery": True, "crash_recovery": True, "stderr_diagnostics": True, "automatic_restart": True}))
     except Exception:
         logs = subprocess.run(["docker", "logs", "--tail", "50", name], capture_output=True, text=True)
         print(logs.stdout + logs.stderr, file=sys.stderr)

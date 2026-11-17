@@ -20,13 +20,13 @@ func ReadFileBounded(path string, maxBytes int64) ([]byte, error) {
 	}
 
 	if fi.Size() <= maxBytes {
-		return io.ReadAll(f)
+		return io.ReadAll(io.LimitReader(f, maxBytes))
 	}
 
 	if _, err := f.Seek(-maxBytes, io.SeekEnd); err != nil {
 		return nil, err
 	}
-	return io.ReadAll(f)
+	return io.ReadAll(io.LimitReader(f, maxBytes))
 }
 
 // TailLines returns the last n lines from s. If n <= 0, returns s unchanged.
@@ -35,18 +35,17 @@ func TailLines(s string, n int) string {
 		return s
 	}
 	count := 0
-	idx := len(s)
-	for i := len(s) - 1; i >= 0; i-- {
+	cursor := len(s) - 1
+	if cursor >= 0 && s[cursor] == '\n' {
+		cursor--
+	}
+	for i := cursor; i >= 0; i-- {
 		if s[i] == '\n' {
 			count++
 			if count == n {
-				idx = i + 1
-				break
+				return s[i+1:]
 			}
 		}
-	}
-	if idx < len(s) {
-		return s[idx:]
 	}
 	return s
 }

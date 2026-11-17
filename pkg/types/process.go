@@ -185,33 +185,44 @@ func (c *ProcessConfig) FullName() string {
 	return name
 }
 
+// ProcessFailure retains the last failure across subsequent restart attempts.
+// It contains lifecycle metadata only; application output stays in the log API.
+type ProcessFailure struct {
+	Phase      string    `json:"phase"`
+	Message    string    `json:"message"`
+	OccurredAt time.Time `json:"occurred_at"`
+	ExitCode   *int      `json:"exit_code,omitempty"`
+	PID        int       `json:"pid,omitempty"`
+}
+
 // ProcessInfo holds runtime information about a managed process.
 type ProcessInfo struct {
-	PendingChanges bool          `json:"pending_changes"`
-	ID             string        `json:"id"`
-	NumericID      int           `json:"numeric_id"`
-	Name           string        `json:"name"`
-	Namespace      string        `json:"namespace,omitempty"`
-	InstanceIndex  int           `json:"instance_index,omitempty"`
-	Runtime        string        `json:"runtime"`
-	State          ProcessState  `json:"state"`
-	Ready          bool          `json:"ready"`
-	PID            int           `json:"pid"`
-	ExitCode       int           `json:"exit_code,omitempty"`
-	Restarts       int           `json:"restarts"`
-	CreatedAt      time.Time     `json:"created_at"`
-	StartedAt      *time.Time    `json:"started_at,omitempty"`
-	FinishedAt     *time.Time    `json:"finished_at,omitempty"`
-	Config         ProcessConfig `json:"config"`
-	LastEvent      string        `json:"last_event,omitempty"`
-	LastReason     string        `json:"last_reason,omitempty"`
-	CPUPercent     float64       `json:"cpu_percent"`
-	MemBytes       int64         `json:"memory_bytes"`
-	MemPercent     float64       `json:"mem_percent"`
-	Threads        int           `json:"threads"`
-	FDs            int           `json:"fds"`
-	Tags           []string      `json:"tags,omitempty"`
-	Uptime         time.Duration `json:"uptime,omitempty"`
+	LastFailure    *ProcessFailure `json:"last_failure,omitempty"`
+	PendingChanges bool            `json:"pending_changes"`
+	ID             string          `json:"id"`
+	NumericID      int             `json:"numeric_id"`
+	Name           string          `json:"name"`
+	Namespace      string          `json:"namespace,omitempty"`
+	InstanceIndex  int             `json:"instance_index,omitempty"`
+	Runtime        string          `json:"runtime"`
+	State          ProcessState    `json:"state"`
+	Ready          bool            `json:"ready"`
+	PID            int             `json:"pid"`
+	ExitCode       int             `json:"exit_code,omitempty"`
+	Restarts       int             `json:"restarts"`
+	CreatedAt      time.Time       `json:"created_at"`
+	StartedAt      *time.Time      `json:"started_at,omitempty"`
+	FinishedAt     *time.Time      `json:"finished_at,omitempty"`
+	Config         ProcessConfig   `json:"config"`
+	LastEvent      string          `json:"last_event,omitempty"`
+	LastReason     string          `json:"last_reason,omitempty"`
+	CPUPercent     float64         `json:"cpu_percent"`
+	MemBytes       int64           `json:"memory_bytes"`
+	MemPercent     float64         `json:"mem_percent"`
+	Threads        int             `json:"threads"`
+	FDs            int             `json:"fds"`
+	Tags           []string        `json:"tags,omitempty"`
+	Uptime         time.Duration   `json:"uptime,omitempty"`
 }
 
 // UptimeString returns a human-readable uptime.

@@ -60,6 +60,7 @@ type ManagedProcess struct {
 	restartStreak    int
 	hookExec         *hooks.Executor
 	metricsCol       MetricsCollector // set by Supervisor to enrich Info()
+	lastFailure      *types.ProcessFailure
 	lastEvent        string
 	lastReason       string
 
@@ -233,6 +234,8 @@ func (p *ManagedProcess) SetStateDirect(state types.ProcessState) {
 func (p *ManagedProcess) Start(ctx context.Context) error {
 	environment, envRevision, err := envfile.Environment(p.Config.EnvFile, p.Config.Cwd, p.Config.Env)
 	if err != nil {
+		p.recordFailure("environment", err)
+		p.SetStateDirect(types.StateErrored)
 		return fmt.Errorf("carregar ambiente: %w", err)
 	}
 
@@ -244,7 +247,8 @@ func (p *ManagedProcess) Start(ctx context.Context) error {
 	// Pre-start hook: can block the start.
 	if p.Config.Hooks != nil && p.Config.Hooks.PreStart != nil {
 		if err := p.hookExec.RunPre(ctx, p.Config.Hooks.PreStart, "pre_start", p.Config); err != nil {
-			p.SetStateDirect(types.StateStopped)
+			p.SetStateDirect(types.StateErrored)
+			p.recordFailure("pre_start", err)
 			return fmt.Errorf("pre_start hook blocked start of %q: %w", p.Config.Name, err)
 		}
 	}
@@ -296,6 +300,7 @@ func (p *ManagedProcess) Start(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		cancel()
 		p.SetState(types.StateErrored)
+		p.recordFailure("start", err)
 		log.Error().Err(err).Str("process", p.Config.Name).Str("command", strings.Join(args, " ")).
 			Msg("failed to start process")
 		return fmt.Errorf("failed to start process %q: %w", p.Config.Name, err)
@@ -304,6 +309,7 @@ func (p *ManagedProcess) Start(ctx context.Context) error {
 	p.mu.Lock()
 	p.PID = cmd.Process.Pid
 	p.startedAt = time.Now()
+	p.finishedAt = time.Time{}
 	p.envRevision = envRevision
 	p.envDirty = false
 	p.mu.Unlock()
@@ -464,35 +470,39 @@ func (p *ManagedProcess) handleExitWith(waitErr error, g exitGuard) {
 	}
 
 	p.mu.Lock()
+	if p.exited != g.exited {
+		p.mu.Unlock()
+		g.closeOnce.Do(func() { close(g.exited) })
+		return
+	}
 	p.ExitCode = exitCode
 	p.finishedAt = time.Now()
-	p.mu.Unlock()
-
-	// Transition based on current state.
 	current := p.GetState()
 	p.ready.Store(false)
-	switch current {
-	case types.StateStopping:
+	if current == types.StateStopping {
 		p.SetStateDirect(types.StateStopped)
-		p.RecordObservation("stopped", fmt.Sprintf("stopped with exit code %d", exitCode))
-		log.Info().
-			Str("process", p.Config.Name).
-			Str("id", p.ID).
-			Int("exit_code", exitCode).
-			Msg("process stopped")
-	default:
+		p.lastEvent, p.lastReason = "stopped", fmt.Sprintf("processo parado (código de saída %d)", exitCode)
+	} else {
+		p.lastEvent = "exited"
+		p.lastReason = fmt.Sprintf("processo encerrado com código %d", exitCode)
 		if exitCode == 0 {
 			p.SetStateDirect(types.StateStopped)
 		} else {
 			p.SetStateDirect(types.StateCrashed)
+			message := fmt.Sprintf("O processo encerrou com código %d.", exitCode)
+			if exitCode < 0 && waitErr != nil {
+				message = "O processo foi interrompido: " + waitErr.Error()
+			}
+			code := exitCode
+			p.lastFailure = &types.ProcessFailure{Phase: "exit", Message: message, OccurredAt: p.finishedAt, ExitCode: &code, PID: p.PID}
+			p.lastReason = message
 		}
-		p.RecordObservation("exited", fmt.Sprintf("process exited with code %d", exitCode))
-		log.Info().
-			Str("process", p.Config.Name).
-			Str("id", p.ID).
-			Int("exit_code", exitCode).
-			Msg("process exited")
 	}
+	p.mu.Unlock()
+	if err := p.FlushLogs(); err != nil {
+		log.Error().Err(err).Str("process", p.Config.Name).Msg("flush process output after exit")
+	}
+	log.Info().Str("process", p.Config.Name).Str("id", p.ID).Int("exit_code", exitCode).Msg("process exited")
 
 	g.closeOnce.Do(func() { close(g.exited) })
 }
@@ -624,6 +634,9 @@ func (p *ManagedProcess) RestartBackoff(attempt int) time.Duration {
 func (p *ManagedProcess) CloseLogFile() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if err := p.flushLogsLocked(); err != nil {
+		log.Error().Err(err).Str("process", p.Config.Name).Msg("flush process logs before closing")
+	}
 	if p.stdoutFile != nil {
 		_ = p.stdoutFile.Close()
 		p.stdoutFile = nil
@@ -658,6 +671,7 @@ func (p *ManagedProcess) Info() types.ProcessInfo {
 	defer p.mu.RUnlock()
 
 	info := types.ProcessInfo{
+		LastFailure:    cloneFailure(p.lastFailure),
 		PendingChanges: p.pending != nil || p.envDirty,
 		ID:             p.ID,
 		NumericID:      p.NumericID,
@@ -679,13 +693,20 @@ func (p *ManagedProcess) Info() types.ProcessInfo {
 	if !p.startedAt.IsZero() {
 		sa := p.startedAt
 		info.StartedAt = &sa
-		info.Uptime = time.Since(p.startedAt)
+		end := time.Now()
+		if !p.finishedAt.IsZero() && p.GetState() != types.StateRunning && p.GetState() != types.StateStarting && p.GetState() != types.StateStopping {
+			end = p.finishedAt
+		}
+		info.Uptime = end.Sub(p.startedAt)
 	}
 	if !p.finishedAt.IsZero() {
 		fa := p.finishedAt
 		info.FinishedAt = &fa
 	}
 
+	if info.State != types.StateRunning && info.State != types.StateStarting && info.State != types.StateStopping {
+		info.PID = 0
+	}
 	// Enrich with live metrics if a collector is wired up.
 	if p.metricsCol != nil && p.PID > 0 {
 		if m, ok := p.metricsCol.Get(p.PID); ok {

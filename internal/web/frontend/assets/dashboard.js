@@ -1,6 +1,9 @@
       // --- State ---
       let ws;
       let currentLogId = null;
+      let currentLogStream = "all";
+      let logRequestNumber = 0;
+      let logRefreshTimer = null;
       let confirmCallback = null;
       let previousFocus = null;
       let allProcesses = [];
@@ -26,6 +29,7 @@
             renderProcesses(allProcesses);
             updateSummary(allProcesses);
             updateTimestamp();
+            if(currentLogId){const process=allProcesses.find(p=>p.id===currentLogId);if(process)renderDiagnostic(process);}
           }
         };
       }
@@ -96,13 +100,18 @@
         for(const p of filtered){
           const row=tbody.insertRow(),id=String(p.id||"");
           const state=Object.hasOwn(stateLabels,p.state)?p.state:"unknown";
-          const values=[id.slice(0,8),p.name||"Sem nome",p.runtime||"process",state,p.ready?"Sim":"Não",p.pid>0?p.pid:"—",Number(p.cpu_percent||0).toFixed(1)+"%",formatBytes(p.memory_bytes||0),p.restarts||0,formatUptime(p.uptime||0),p.last_event||"—",p.last_reason||"—"];
+          const values=[id.slice(0,8),p.name||"Sem nome",p.runtime||"process",state,p.ready?"Sim":"Não",["running","starting","stopping"].includes(p.state)&&p.pid>0?p.pid:"—",Number(p.cpu_percent||0).toFixed(1)+"%",formatBytes(p.memory_bytes||0),p.restarts||0,formatUptime(p.uptime||0),p.last_event||"—",p.last_reason||"—"];
           values.forEach((value,i)=>{
             const cell=row.insertCell();cell.textContent=String(value);
             if([0,4,5,6,7,8,9].includes(i))cell.className="mono";
             if(i===1){const wrap=document.createElement("div");wrap.className="application-name";const symbol=document.createElement("span");symbol.className="application-symbol";symbol.append(PulsoUI.icon("terminal"));const text=document.createElement("div"),name=document.createElement("strong"),detail=document.createElement("span");name.textContent=value;detail.className="process-id";detail.textContent=id.slice(0,8);text.append(name,detail);if(p.pending_changes){const pending=document.createElement("span");pending.className="application-pending";pending.textContent="Reinício pendente";text.append(pending);}wrap.append(symbol,text);cell.replaceChildren(wrap);}
             if(i===2){const tag=document.createElement("span");tag.className="runtime-tag";tag.textContent=value;cell.replaceChildren(tag);}
-            if(i===3){const badge=document.createElement("span");badge.className="badge badge-"+state;const dot=document.createElement("span");dot.className="dot";dot.setAttribute("aria-hidden","true");badge.append(dot,document.createTextNode(stateLabels[state]));cell.replaceChildren(badge);}
+            if(i===3){const badge=document.createElement("span");badge.className="badge badge-"+state;const dot=document.createElement("span");dot.className="dot";dot.setAttribute("aria-hidden","true");badge.append(dot,document.createTextNode(stateLabels[state]));cell.replaceChildren(badge);
+              if(["crashed","errored","waiting"].includes(state)){
+                const reason=document.createElement("button");reason.type="button";reason.className="process-failure-link";
+                reason.textContent=p.last_failure?.message||p.last_reason||("Encerrada (código "+(p.exit_code??"desconhecido")+"). Ver detalhes.");
+                reason.dataset.processAction=id+"failure";reason.title=reason.textContent;reason.setAttribute("aria-label",reason.textContent+" Ver detalhes de "+p.name);reason.onclick=()=>showLogs(id);cell.append(reason);
+              }}
             if(i===11)cell.title=String(value);
           });
           const actions=document.createElement("div");actions.className="actions";
@@ -256,46 +265,69 @@
         );
       }
 
-      // --- Logs ---
-      async function showLogs(id) {
-        currentLogId = id;
-        const panel = document.getElementById("log-panel");
-        const content = document.getElementById("log-content");
-        const title = document.getElementById("log-title");
-        const lines = document.getElementById("log-lines");
-        title.textContent = "Logs de " + (allProcesses.find(p=>p.id===id)?.name || id.slice(0,8));
-        lines.textContent = "Carregando…";
-        panel.classList.add("visible");
-        try {
-          const resp = await fetch("/api/v1/processes/" + id + "/logs");
-          const data = await resp.json();
-          content.textContent = data.logs || "Nenhum log disponível para esta aplicação.";
-          lines.textContent = data.lines ? data.lines + " linhas" : "";
-          content.scrollTop = content.scrollHeight;
-        } catch (e) {
-          content.textContent = "Erro ao carregar os logs: " + e.message;
-          lines.textContent = "";
+      // --- Logs and failure details ---
+      const eventLabels={started:"Iniciada",restarted:"Reiniciada",reloaded:"Recarregada",stopped:"Parada",exited:"Encerrada",restart_scheduled:"Reinício agendado",restart_skipped:"Reinício não agendado",start_failed:"Falha ao iniciar",restart_failed:"Falha ao reiniciar",readiness_failed:"Falha na verificação de prontidão",environment_failed:"Falha ao carregar ambiente",pre_start_failed:"Falha antes de iniciar"};
+      const diagnosticTime=value=>value?new Date(value).toLocaleString("pt-BR"):"—";
+      function renderDiagnostic(process){
+        const panel=document.getElementById("process-diagnostic");
+        if(!process){panel.hidden=true;return;}
+        panel.hidden=false;
+        const failure=process.last_failure,failed=["crashed","errored","waiting"].includes(process.state);
+        panel.classList.toggle("has-failure",failed);
+        document.getElementById("process-diagnostic-title").textContent=failed?"A aplicação não está em execução":failure?"Última falha registrada":"Resultado da aplicação";
+        document.getElementById("process-diagnostic-message").textContent=failure?.message||process.last_reason||(failed?"O processo encerrou. Confira o código de saída e os registros abaixo.":"Acompanhe as saídas da aplicação e os eventos de execução.");
+        const facts=document.getElementById("process-diagnostic-facts");facts.replaceChildren();
+        const code=failure?.exit_code??((process.finished_at||failed)?process.exit_code:null);
+        for(const [label,value] of [["Status",stateLabels[process.state]||process.state],["Código de saída",code??"—"],["Reinícios",process.restarts??0],["Último evento",eventLabels[process.last_event]||process.last_event||"—"],["Falha registrada em",diagnosticTime(failure?.occurred_at)],["Último encerramento",diagnosticTime(process.finished_at)]]){
+          const group=document.createElement("div"),term=document.createElement("dt"),description=document.createElement("dd");term.textContent=label;description.textContent=String(value);group.append(term,description);facts.append(group);
         }
       }
-
-      async function refreshLogs() {
-        if (!currentLogId) return;
-        showLogs(currentLogId);
+      async function loadLogs(id,initial=false){
+        const token=++logRequestNumber,content=document.getElementById("log-content"),lines=document.getElementById("log-lines");
+        const selectedStream=currentLogStream,limit=document.getElementById("log-limit").value;
+        if(initial){content.textContent="Carregando registros…";lines.textContent="Carregando…";}
+        const warning=document.getElementById("log-warning");
+        try{
+          const response=await fetch("/api/v1/processes/"+encodeURIComponent(id)+"/logs?stream="+selectedStream+"&lines="+limit,{cache:"no-store"});
+          const data=await response.json();
+          if(token!==logRequestNumber||currentLogId!==id)return;
+          if(response.status===401){location.href="/login";return;}
+          if(data.process)renderDiagnostic(data.process);
+          if(!response.ok)throw new Error(data.error||"Não foi possível carregar os logs.");
+          warning.textContent=(data.warnings||[]).join(" ");warning.hidden=!warning.textContent;
+          const text=data.logs||(selectedStream==="stderr"?"A aplicação ainda não escreveu em stderr. Confira também Todos e o resultado acima.":"A aplicação não escreveu nesta saída. Mesmo sem logs, o resultado e o código de saída aparecem acima.");
+          const follow=initial||content.scrollHeight-content.scrollTop-content.clientHeight<50;
+          if(content.textContent!==text){content.textContent=text;if(follow)content.scrollTop=content.scrollHeight;}
+          lines.textContent="Até "+(data.lines||limit)+" linhas por saída · atualização automática";
+        }catch(error){
+          if(token!==logRequestNumber||currentLogId!==id)return;
+          warning.textContent=error.message;warning.hidden=false;
+          if(initial)content.textContent="Não foi possível carregar os registros.";
+          lines.textContent="Falha ao atualizar";
+        }
       }
-
-      function copyLogs() {
-        const content = document.getElementById("log-content");
-        navigator.clipboard.writeText(content.textContent).then(() => {
-          showToast("Logs copiados.", "success");
-        }).catch(() => {
-          showToast("Não foi possível copiar os logs.", "error");
-        });
+      async function showLogs(id){
+        const changed=currentLogId!==id;currentLogId=id;
+        document.getElementById("log-panel").classList.add("visible");
+        document.getElementById("log-title").textContent="Logs de "+(allProcesses.find(p=>p.id===id)?.name||id.slice(0,8));
+        renderDiagnostic(allProcesses.find(p=>p.id===id));
+        clearInterval(logRefreshTimer);logRefreshTimer=null;
+        await loadLogs(id,true);
+        if(currentLogId===id&&!logRefreshTimer)logRefreshTimer=setInterval(()=>{if(!document.hidden)loadLogs(id);},3000);
+        if(changed)document.getElementById("log-panel").scrollIntoView({block:"nearest",behavior:"auto"});
       }
-
-      function closeLogs() {
-        document.getElementById("log-panel").classList.remove("visible");
-        currentLogId = null;
+      async function refreshLogs(){if(currentLogId)await loadLogs(currentLogId);}
+      function copyLogs(){
+        const diagnostic=document.getElementById("process-diagnostic").innerText;
+        navigator.clipboard.writeText(diagnostic+"\n\n"+document.getElementById("log-content").textContent).then(()=>showToast("Diagnóstico e logs copiados.","success")).catch(()=>showToast("Não foi possível copiar os logs.","error"));
       }
+      function closeLogs(){document.getElementById("log-panel").classList.remove("visible");currentLogId=null;logRequestNumber++;clearInterval(logRefreshTimer);logRefreshTimer=null;}
+      document.querySelectorAll("[data-log-stream]").forEach(button=>button.addEventListener("click",()=>{
+        currentLogStream=button.dataset.logStream;
+        document.querySelectorAll("[data-log-stream]").forEach(tab=>{const active=tab===button;tab.classList.toggle("is-active",active);tab.setAttribute("aria-pressed",String(active));});
+        if(currentLogId)loadLogs(currentLogId,true);
+      }));
+      document.getElementById("log-limit").addEventListener("change",()=>{if(currentLogId)loadLogs(currentLogId,true);});
 
       async function refreshProcesses() {
         const button = document.getElementById("refresh-processes"); button.disabled = true;
@@ -312,6 +344,7 @@
       document.getElementById("refresh-processes").addEventListener("click", refreshProcesses);
       document.addEventListener("pulso:application-created", (event) => {
         const created = event.detail;
+        if(!created?.id){refreshProcesses();return;}
         allProcesses = [...allProcesses.filter(p => p.id !== created.id), created];
         document.getElementById("process-search").value = "";
         renderProcesses(allProcesses); updateSummary(allProcesses); updateTimestamp();

@@ -605,7 +605,7 @@ func (s *Supervisor) enforceMemoryLimits() {
 			Int64("max_memory_restart", proc.maxMemoryRestart).
 			Msg("process exceeded memory restart threshold")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx := context.Background()
 		if err := s.RestartProcess(ctx, proc.ID); err != nil {
 			log.Error().
 				Str("process", proc.Config.Name).
@@ -615,7 +615,6 @@ func (s *Supervisor) enforceMemoryLimits() {
 		} else {
 			proc.RecordObservation("restarted", fmt.Sprintf("memory usage %d exceeded limit %d", m.MemBytes, proc.maxMemoryRestart))
 		}
-		cancel()
 	}
 }
 
@@ -670,8 +669,8 @@ func (s *Supervisor) handleExit(proc *ManagedProcess, exitCode int) {
 		delete(s.restartTimers, proc.ID)
 		s.mu.Unlock()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		// Readiness and hooks have their own timeouts. The application must outlive this callback.
+		ctx := context.Background()
 
 		if err := s.startManagedProcess(ctx, proc); err != nil {
 			proc.RecordObservation("restart_failed", fmt.Sprintf("automatic restart failed after exit code %d", exitCode))
@@ -682,7 +681,7 @@ func (s *Supervisor) handleExit(proc *ManagedProcess, exitCode int) {
 				Msg("restart failed")
 			return
 		}
-		proc.RecordObservation("restarted", fmt.Sprintf("automatic restart after exit code %d", exitCode))
+		proc.recordRunning("restarted", fmt.Sprintf("automatic restart after exit code %d", exitCode))
 
 		log.Info().
 			Str("process", proc.Config.Name).
@@ -697,7 +696,7 @@ func (s *Supervisor) handleExit(proc *ManagedProcess, exitCode int) {
 
 func (s *Supervisor) startManagedProcess(ctx context.Context, proc *ManagedProcess) error {
 	if err := proc.Start(ctx); err != nil {
-		proc.RecordObservation("start_failed", "process start failed")
+		proc.RecordObservation("start_failed", err.Error())
 		return err
 	}
 
@@ -723,10 +722,10 @@ func (s *Supervisor) startManagedProcess(ctx context.Context, proc *ManagedProce
 		s.cancelMonitor(proc.ID)
 		s.untrackMetrics(proc)
 		proc.SetStateDirect(types.StateErrored)
-		proc.RecordObservation("readiness_failed", err.Error())
+		proc.recordFailure("readiness", err)
 		return err
 	}
-	proc.RecordObservation("started", "process ready")
+	proc.recordRunning("started", "process ready")
 
 	return nil
 }
@@ -833,6 +832,10 @@ func (s *Supervisor) Save() error {
 			CreatedAt:    proc.CreatedAt.Format(time.RFC3339),
 			PID:          info.PID,
 			State:        string(info.State),
+			LastFailure:  info.LastFailure,
+			LastEvent:    info.LastEvent,
+			LastReason:   info.LastReason,
+			ExitCode:     info.ExitCode,
 			StartedAt:    info.StartedAt,
 		})
 	}
@@ -904,26 +907,45 @@ func (s *Supervisor) Resurrect() error {
 		if snap.RunOnRestore != nil {
 			start = *snap.RunOnRestore
 		}
-		_, err := s.addProcess(context.Background(), snap.Config, start, &snap.NumericID)
+		proc, err := s.addProcess(context.Background(), snap.Config, start, &snap.NumericID)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("restore %q: %w", snap.Config.Name, err))
 			continue
 		}
-
+		proc.operationMu.Lock()
+		proc.mu.Lock()
+		if proc.lastFailure == nil {
+			proc.lastFailure = cloneFailure(snap.LastFailure)
+		}
+		if proc.lastEvent == "" {
+			proc.lastEvent, proc.lastReason = snap.LastEvent, snap.LastReason
+		}
+		if !start {
+			proc.ExitCode = snap.ExitCode
+		}
+		if snap.Restarts > proc.Restarts {
+			proc.Restarts = snap.Restarts
+		}
+		proc.mu.Unlock()
+		proc.operationMu.Unlock()
 	}
 	return errors.Join(failures...)
 }
 
 // processSnapshot captures everything needed to persist and restore a process.
 type processSnapshot struct {
-	RunOnRestore *bool               `json:"run_on_restore,omitempty"`
-	Config       types.ProcessConfig `json:"config"`
-	NumericID    int                 `json:"numeric_id"`
-	Restarts     int                 `json:"restarts"`
-	CreatedAt    string              `json:"created_at"`
-	PID          int                 `json:"pid"`
-	State        string              `json:"state"`
-	StartedAt    *time.Time          `json:"started_at,omitempty"`
+	LastFailure  *types.ProcessFailure `json:"last_failure,omitempty"`
+	LastEvent    string                `json:"last_event,omitempty"`
+	LastReason   string                `json:"last_reason,omitempty"`
+	ExitCode     int                   `json:"exit_code,omitempty"`
+	RunOnRestore *bool                 `json:"run_on_restore,omitempty"`
+	Config       types.ProcessConfig   `json:"config"`
+	NumericID    int                   `json:"numeric_id"`
+	Restarts     int                   `json:"restarts"`
+	CreatedAt    string                `json:"created_at"`
+	PID          int                   `json:"pid"`
+	State        string                `json:"state"`
+	StartedAt    *time.Time            `json:"started_at,omitempty"`
 }
 
 // appMetadata is the per-app metadata file format.

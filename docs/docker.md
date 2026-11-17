@@ -341,6 +341,47 @@ Compile e publique sua imagem, configure `PULSO_IMAGE` com esse nome e use
 `/opt/minha-api/venv/bin/python` no campo **Interpretador** da aplicação. O código
 do projeto continua montado em `/apps/minha-api`.
 
+### Scripts que exigem Python 3.11
+
+Montar a pasta do host em `/apps` ou `/host` disponibiliza arquivos. O interpretador
+usado pelo script e suas bibliotecas precisam existir **dentro do contêiner**.
+Um Python instalado no RHEL não é automaticamente disponibilizado no contêiner;
+um `.venv` criado no host também pode depender de caminhos e bibliotecas diferentes.
+
+Para scripts que chamam `python3.11`, há um alvo opcional de compilação baseado na
+[imagem oficial do Python 3.11](https://hub.docker.com/_/python). Ele mantém Node.js 24,
+adiciona Python 3.11 real e torna essa a versão padrão de `python3` para as aplicações.
+
+Adicione à `.env` do Compose, preservando as outras configurações:
+
+```dotenv
+PULSO_BUILD_TARGET=runtime-python311
+```
+
+Na mesma pasta e com o mesmo nome de projeto da instalação atual, recompile e recrie:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+# Se a instalação usa acesso completo ao host, mantenha também o override:
+# docker compose -f compose.yaml -f compose.build.yaml -f compose.host.yaml up -d --build
+
+docker exec pulso-pulso-1 python3.11 --version
+```
+
+O nome do contêiner depende do projeto; adapte `pulso-pulso-1` se necessário.
+Não remova o volume de dados. As contas, aplicações e configurações usam esse volume.
+Mantenha `PULSO_BUILD_TARGET` na `.env` nas próximas atualizações.
+
+Isso resolve `python3.11: command not found`. As dependências do projeto ainda
+precisam ser instaladas em um ambiente do contêiner. Para incluí-las de forma
+reproduzível, compile primeiro `pulso:python311` com
+`docker build --target runtime-python311 -t pulso:python311 .` e use
+`FROM pulso:python311` no exemplo de imagem derivada acima, instalando
+`requirements.txt` em um venv com `python3.11 -m venv`.
+Instalar pacotes manualmente em um contêiner em execução perde essas alterações
+quando ele é recriado. Use o venv da imagem no script ou no campo **Interpretador**;
+para um script shell que cria seu próprio venv, ajuste essa lógica no script.
+
 ## Operação e backup
 
 ```bash
@@ -391,4 +432,5 @@ python3 scripts/docker-smoke.py pulso:smoke
 O teste usa somente contêineres e volumes temporários. Valida usuário sem
 privilégios, Python/Node.js, health check, login e sessão persistentes, editor de
 `.env`, reinício manual, substituição do contêiner e recuperação após SIGKILL,
-incluindo a preservação das aplicações que estavam paradas.
+incluindo a preservação das aplicações que estavam paradas. Também verifica erros em
+`stderr` sem quebra de linha, saídas silenciosas e a execução após reinício automático.

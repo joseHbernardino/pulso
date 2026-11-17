@@ -5,16 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/httputil"
-	"pulso.local/pulso/internal/logutil"
 	"pulso.local/pulso/internal/metrics"
 	"pulso.local/pulso/pkg/types"
 )
@@ -142,43 +138,6 @@ func (s *Server) handleDeleteProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-// handleGetLogs returns the last N lines of a process log.
-func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	proc, err := s.supervisor.Get(id)
-	if err != nil {
-		httputil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		return
-	}
-
-	info := proc.Info()
-	logPath := s.supervisor.LogPath(info.Name)
-
-	lines := 50
-	if l := r.URL.Query().Get("lines"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			lines = n
-		}
-	}
-
-	data, err := logutil.ReadFileBounded(logPath, 1<<20) // 1 MiB max
-	if err != nil {
-		if os.IsNotExist(err) {
-			httputil.WriteJSON(w, http.StatusOK, map[string]string{"logs": ""})
-			return
-		}
-		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
-	content := logutil.TailLines(string(data), lines)
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{
-		"logs":  content,
-		"path":  filepath.Base(logPath),
-		"lines": strconv.Itoa(lines),
-	})
 }
 
 // handleSystemMetrics returns system-wide resource usage.

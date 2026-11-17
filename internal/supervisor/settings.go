@@ -142,7 +142,9 @@ func (s *Supervisor) replacement(proc *ManagedProcess) (*ManagedProcess, error) 
 	}
 	next := NewManagedProcess(cfg)
 	next.ID, next.NumericID, next.CreatedAt = proc.ID, proc.NumericID, proc.CreatedAt
-	next.Restarts = proc.Info().Restarts
+	previous := proc.Info()
+	next.Restarts = previous.Restarts
+	next.lastFailure = cloneFailure(previous.LastFailure)
 	next.operationMu = proc.operationMu
 	next.ApplyDefaults(s.defaults)
 	next.metricsCol = s.metrics

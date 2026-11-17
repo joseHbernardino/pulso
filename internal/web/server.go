@@ -239,44 +239,58 @@ type ProcessListMessage struct {
 }
 
 type wsProcessSummary struct {
-	ID            string             `json:"id"`
-	NumericID     int                `json:"numeric_id"`
-	Name          string             `json:"name"`
-	Namespace     string             `json:"namespace,omitempty"`
-	InstanceIndex int                `json:"instance_index,omitempty"`
-	Runtime       string             `json:"runtime"`
-	State         types.ProcessState `json:"state"`
-	PID           int                `json:"pid"`
-	ExitCode      int                `json:"exit_code,omitempty"`
-	Restarts      int                `json:"restarts"`
-	CPUPercent    float64            `json:"cpu_percent"`
-	MemBytes      int64              `json:"memory_bytes"`
-	MemPercent    float64            `json:"mem_percent"`
-	Threads       int                `json:"threads"`
-	FDs           int                `json:"fds"`
-	Uptime        time.Duration      `json:"uptime,omitempty"`
+	LastFailure    *types.ProcessFailure `json:"last_failure,omitempty"`
+	LastEvent      string                `json:"last_event,omitempty"`
+	LastReason     string                `json:"last_reason,omitempty"`
+	StartedAt      *time.Time            `json:"started_at,omitempty"`
+	FinishedAt     *time.Time            `json:"finished_at,omitempty"`
+	Ready          bool                  `json:"ready"`
+	PendingChanges bool                  `json:"pending_changes"`
+	ID             string                `json:"id"`
+	NumericID      int                   `json:"numeric_id"`
+	Name           string                `json:"name"`
+	Namespace      string                `json:"namespace,omitempty"`
+	InstanceIndex  int                   `json:"instance_index,omitempty"`
+	Runtime        string                `json:"runtime"`
+	State          types.ProcessState    `json:"state"`
+	PID            int                   `json:"pid"`
+	ExitCode       int                   `json:"exit_code,omitempty"`
+	Restarts       int                   `json:"restarts"`
+	CPUPercent     float64               `json:"cpu_percent"`
+	MemBytes       int64                 `json:"memory_bytes"`
+	MemPercent     float64               `json:"mem_percent"`
+	Threads        int                   `json:"threads"`
+	FDs            int                   `json:"fds"`
+	Uptime         time.Duration         `json:"uptime,omitempty"`
 }
 
 func summarizeProcesses(procs []types.ProcessInfo) []wsProcessSummary {
 	result := make([]wsProcessSummary, 0, len(procs))
 	for _, p := range procs {
 		result = append(result, wsProcessSummary{
-			ID:            p.ID,
-			NumericID:     p.NumericID,
-			Name:          p.Name,
-			Namespace:     p.Namespace,
-			InstanceIndex: p.InstanceIndex,
-			Runtime:       p.Runtime,
-			State:         p.State,
-			PID:           p.PID,
-			ExitCode:      p.ExitCode,
-			Restarts:      p.Restarts,
-			CPUPercent:    p.CPUPercent,
-			MemBytes:      p.MemBytes,
-			MemPercent:    p.MemPercent,
-			Threads:       p.Threads,
-			FDs:           p.FDs,
-			Uptime:        p.Uptime,
+			LastFailure:    p.LastFailure,
+			LastEvent:      p.LastEvent,
+			LastReason:     p.LastReason,
+			StartedAt:      p.StartedAt,
+			FinishedAt:     p.FinishedAt,
+			Ready:          p.Ready,
+			PendingChanges: p.PendingChanges,
+			ID:             p.ID,
+			NumericID:      p.NumericID,
+			Name:           p.Name,
+			Namespace:      p.Namespace,
+			InstanceIndex:  p.InstanceIndex,
+			Runtime:        p.Runtime,
+			State:          p.State,
+			PID:            p.PID,
+			ExitCode:       p.ExitCode,
+			Restarts:       p.Restarts,
+			CPUPercent:     p.CPUPercent,
+			MemBytes:       p.MemBytes,
+			MemPercent:     p.MemPercent,
+			Threads:        p.Threads,
+			FDs:            p.FDs,
+			Uptime:         p.Uptime,
 		})
 	}
 	return result

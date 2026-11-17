@@ -58,3 +58,24 @@ func TestProcessListMessageOmitsEmbeddedConfig(t *testing.T) {
 		t.Fatalf("websocket payload missing memory metric: %s", got)
 	}
 }
+
+func TestProcessListMessagePreservesDiagnostics(t *testing.T) {
+	now := time.Now().UTC()
+	code := 127
+	result := summarizeProcesses([]types.ProcessInfo{{
+		ID: "failed", State: types.StateCrashed, ExitCode: code, LastEvent: "restart_scheduled", LastReason: "retrying", FinishedAt: &now,
+		LastFailure: &types.ProcessFailure{Phase: "exit", Message: "exit 127", OccurredAt: now, ExitCode: &code}, PendingChanges: true,
+	}})
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored []types.ProcessInfo
+	if err = json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	p := restored[0]
+	if p.LastFailure == nil || *p.LastFailure.ExitCode != code || p.LastEvent != "restart_scheduled" || p.LastReason != "retrying" || p.FinishedAt == nil || !p.PendingChanges {
+		t.Fatalf("live update lost diagnostic information: %s", data)
+	}
+}

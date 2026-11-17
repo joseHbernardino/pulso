@@ -60,6 +60,12 @@ func TestEnforceMemoryLimitsRestartsProcess(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if proc.Info().PID != oldPID && proc.Info().PID > 0 {
+			// The restart callback returning must not cancel the new application's context.
+			newPID := proc.Info().PID
+			time.Sleep(300 * time.Millisecond)
+			if info := proc.Info(); info.State != types.StateRunning || info.PID != newPID {
+				t.Fatalf("memory-triggered restart stopped after returning: %+v", info)
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
