@@ -2,7 +2,8 @@
 
 O Pulso pode rodar como um serviço Docker. O host precisa do Docker Engine e do
 plugin Docker Compose; Go, Python e Node.js não precisam estar instalados no host.
-A imagem inclui o binário compilado, Node.js 24, npm, Python 3 e suporte a venv.
+A imagem inclui o binário compilado, Node.js (versão fixada no Dockerfile), npm,
+Python 3 e suporte a venv.
 
 O Pulso gerencia programas **dentro do seu contêiner**. Ele não controla os
 processos do host nem cria um contêiner independente para cada aplicação. Os
@@ -349,8 +350,9 @@ Um Python instalado no RHEL não é automaticamente disponibilizado no contêine
 um `.venv` criado no host também pode depender de caminhos e bibliotecas diferentes.
 
 Para scripts que chamam `python3.11`, há um alvo opcional de compilação baseado na
-[imagem oficial do Python 3.11](https://hub.docker.com/_/python). Ele mantém Node.js 24,
-adiciona Python 3.11 real e torna essa a versão padrão de `python3` para as aplicações.
+[imagem oficial do Python 3.11](https://hub.docker.com/_/python). Ele mantém o Node.js
+da imagem padrão, adiciona Python 3.11 real e torna essa a versão padrão de
+`python3` para as aplicações.
 
 Adicione à `.env` do Compose, preservando as outras configurações:
 
@@ -432,5 +434,7 @@ python3 scripts/docker-smoke.py pulso:smoke
 O teste usa somente contêineres e volumes temporários. Valida usuário sem
 privilégios, Python/Node.js, health check, login e sessão persistentes, editor de
 `.env`, reinício manual, substituição do contêiner e recuperação após SIGKILL,
-incluindo a preservação das aplicações que estavam paradas. Também verifica erros em
+incluindo a preservação das aplicações que estavam paradas. A versão principal
+do Node.js é conferida contra o Dockerfile, e uma aplicação Node é iniciada e
+recuperada junto com a aplicação Python. Também verifica erros em
 `stderr` sem quebra de linha, saídas silenciosas e a execução após reinício automático.

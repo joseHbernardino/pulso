@@ -2,6 +2,8 @@
 """Exercise the built image with disposable containers and volumes only."""
 import http.cookiejar
 import json
+import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -29,8 +31,20 @@ def wait_until(check, description, timeout=45):
     raise RuntimeError("timeout: " + description)
 
 
+def expected_node_major(dockerfile):
+    """Use the pinned runtime as the contract, including on Dependabot PRs."""
+    versions = set(re.findall(
+        r"^\s*FROM\s+(?:--platform=\S+\s+)?(?:docker\.io/library/)?node:(\d+)(?=[.@\s-]|$)",
+        pathlib.Path(dockerfile).read_text(), re.IGNORECASE | re.MULTILINE,
+    ))
+    if len(versions) != 1:
+        raise RuntimeError("Dockerfile must declare exactly one Node.js major version for the smoke test")
+    return int(versions.pop())
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "pulso:smoke"
+    node_major = expected_node_major(pathlib.Path(__file__).resolve().parents[1] / "Dockerfile")
     name = "pulso-smoke-" + uuid.uuid4().hex[:12]
     data_volume, apps_volume = name + "-data", name + "-apps"
     cookies = http.cookiejar.CookieJar()
@@ -63,8 +77,13 @@ def main():
         base = "http://127.0.0.1:" + port
         wait_until(lambda: api("GET", "/api/auth/status"), "web dashboard")
         assert docker("exec", name, "id", "-u") == "10001", "image must run unprivileged"
-        assert docker("exec", name, "node", "--version").startswith("v24.")
-        assert docker("exec", name, "python3", "--version").startswith("Python 3.")
+        node_version = docker("exec", name, "node", "--version")
+        assert node_version.startswith(f"v{node_major}."), (
+            f"{image}: Node.js {node_version!r}, expected v{node_major}.x as declared in Dockerfile"
+        )
+        python_version = docker("exec", name, "python3", "--version")
+        assert python_version.startswith("Python 3."), f"{image}: unexpected Python version {python_version!r}"
+        print(f"Runtime versions: Node.js {node_version}, {python_version}", flush=True)
         wait_until(
             lambda: json.loads(docker("inspect", name))[0]["State"]["Health"]["Status"] == "healthy",
             "container health check", timeout=65,
@@ -81,6 +100,10 @@ def main():
     def marker(want):
         return docker("exec", name, "cat", "/apps/observed.txt") == want
 
+    def node_marker():
+        observed = json.loads(docker("exec", name, "cat", "/apps/node-observed.json"))
+        return observed["version"].startswith(f"v{node_major}.") and observed["env"] == "node-smoke"
+
     try:
         launch()
         status = api("GET", "/api/auth/status")
@@ -89,6 +112,19 @@ def main():
         password = "Smoke-A1!" + uuid.uuid4().hex
         api("POST", "/api/auth/setup", {"token": token, "username": "smokeadmin", "password": password})
         api("POST", "/api/auth/login", {"username": "smokeadmin", "password": password})
+        # Run a real Node application and recover it alongside the Python application.
+        node_script = (
+            "require('node:fs').writeFileSync('/apps/node-observed.json',"
+            "JSON.stringify({version:process.version,env:process.env.EXPLICIT}));"
+            "setInterval(()=>{},60000);"
+        )
+        docker("exec", name, "node", "-e",
+               "require('node:fs').writeFileSync('/apps/app.js',process.argv[1])", node_script)
+        api("POST", "/api/v1/processes", {
+            "name": "node-runtime", "runtime": "node", "entrypoint": "/apps/app.js", "cwd": "/apps",
+            "env": {"EXPLICIT": "node-smoke"}, "restart_policy": "never",
+        })
+        wait_until(node_marker, "Node.js application startup")
         # Failure diagnostics must work even when stdout is empty or output has no newline.
         for app_name, command, code, message in [
             ("stderr-crash", "printf 'missing runtime: python3.11' >&2; exit 127", 127, "missing runtime: python3.11"),
@@ -171,6 +207,8 @@ def main():
         apps = {p["name"]: p for p in api("GET", "/api/v1/processes")}
         assert apps["kept-stopped"]["state"] == "stopped", "stopped application unexpectedly started"
         assert apps["python-env"]["state"] == "running"
+        assert apps["node-runtime"]["state"] == "running"
+        wait_until(node_marker, "Node.js recovery after replacement")
         assert not apps["python-env"]["pending_changes"]
         # An ungraceful container loss must recover the last acknowledged state too.
         remove(graceful=False)
@@ -179,9 +217,11 @@ def main():
         apps = {p["name"]: p for p in api("GET", "/api/v1/processes")}
         assert apps["kept-stopped"]["state"] == "stopped"
         assert apps["python-env"]["state"] == "running"
+        assert apps["node-runtime"]["state"] == "running"
+        wait_until(node_marker, "Node.js recovery after SIGKILL")
         wait_until(lambda: marker("third|saved"), "recovery after SIGKILL")
         remove()
-        print(json.dumps({"image": image, "non_root": True, "login_persisted": True,
+        print(json.dumps({"image": image, "node_major": node_major, "node_application": True, "non_root": True, "login_persisted": True,
                           "dotenv_editor": True, "host_path_mapping": True, "file_browser": True, "replacement_recovery": True, "crash_recovery": True, "stderr_diagnostics": True, "automatic_restart": True}))
     except Exception:
         logs = subprocess.run(["docker", "logs", "--tail", "50", name], capture_output=True, text=True)

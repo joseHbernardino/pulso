@@ -99,8 +99,9 @@ pulso doctor
 ## Docker
 
 Run Pulso as a Docker service with persistent accounts, process recovery and
-application files. The image includes Python 3 and Node.js 24. Applications run
-inside the Pulso container, with projects mounted at `/apps`.
+application files. The image includes Python 3 and the Node.js version pinned in
+the Dockerfile. Applications run inside the Pulso container, with projects mounted
+at `/apps`.
 
 ```bash
 cp docker.env.example .env
