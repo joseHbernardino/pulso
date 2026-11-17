@@ -21,6 +21,8 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose -f compose.yaml -f compose.build.yaml config --quiet
+          docker compose -f compose.yaml -f compose.host.yaml config --quiet
+          docker compose -f compose.yaml -f compose.build.yaml -f compose.host.yaml config --quiet
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -30,7 +32,9 @@ jobs:
           cache-from: type=gha,scope=pulso-container
           cache-to: type=gha,mode=max,scope=pulso-container
       - name: Test login, dotenv and recovery after container replacement
-        run: python3 scripts/docker-smoke.py pulso:smoke
+        run: |
+          python3 scripts/docker-smoke.py pulso:smoke
+          python3 scripts/docker-host-smoke.py pulso:smoke
 
   publish:
     name: Publish Linux images

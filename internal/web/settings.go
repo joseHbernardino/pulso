@@ -33,13 +33,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	result := map[string]any{"config": cfg, "revision": revision}
+	result := map[string]any{"config": s.paths.clientConfig(cfg), "revision": revision}
 	if cfg.EnvFile != "" {
 		doc, readErr := envfile.Read(cfg.EnvFile)
 		if readErr != nil {
 			result["env_error"] = s.paths.issue(readErr).Error
 			result["env_issue"] = s.paths.issue(readErr)
 		} else {
+			doc.Path = s.paths.userPath(doc.Path)
 			result["env_file"] = doc
 			s.supervisor.ObserveEnvRevision(cfg.EnvFile, doc.Revision)
 		}
@@ -106,9 +107,10 @@ func (s *Server) handlePreviewEnv(w http.ResponseWriter, r *http.Request) {
 		s.settingsError(w, err)
 		return
 	}
+	doc.Path = s.paths.userPath(doc.Path)
 	httputil.WriteJSON(w, http.StatusOK, struct {
 		envfile.Document
 		Cwd    string `json:"cwd"`
 		Mapped bool   `json:"mapped"`
-	}{Document: doc, Cwd: cwd, Mapped: req.Path != path || req.Cwd != cwd})
+	}{Document: doc, Cwd: s.paths.userPath(cwd), Mapped: req.Path != path || req.Cwd != cwd})
 }

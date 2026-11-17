@@ -22,9 +22,11 @@ type pathMapping struct {
 	Container string `json:"container"`
 	Detected  bool   `json:"detected,omitempty"`
 	ReadOnly  bool   `json:"read_only,omitempty"`
+	Label     string `json:"label,omitempty"`
 }
 
 type pathResolver struct {
+	hostRoot    string
 	container   bool
 	mappings    []pathMapping
 	configError error
@@ -58,7 +60,7 @@ func newPathResolver(container bool, hostRoot, extra string) pathResolver {
 			m.Host = ""
 		}
 		if m.Host == string(filepath.Separator) || m.Container == string(filepath.Separator) {
-			p.configError = errors.New("configure uma pasta de projetos, sem mapear a raiz inteira do sistema")
+			p.configError = errors.New("para acessar a raiz / do servidor, use o modo host com compose.host.yaml. Nesse modo, a raiz fica disponível em /host")
 			return p
 		}
 		if previous, ok := targets[m.Host]; m.Host != "" && ok && previous != m.Container {
@@ -76,7 +78,7 @@ func pathResolverFromEnvironment() pathResolver {
 	_, docker := os.Stat("/.dockerenv")
 	_, podman := os.Stat("/run/.containerenv")
 	container := os.Getenv("PULSO_CONTAINER") == "1" || docker == nil || podman == nil
-	return newPathResolver(container, os.Getenv("PULSO_HOST_APPS_DIR"), os.Getenv("PULSO_PATH_MAPPINGS")).withDetectedMounts()
+	return newPathResolver(container, os.Getenv("PULSO_HOST_APPS_DIR"), os.Getenv("PULSO_PATH_MAPPINGS")).withHostRoot(os.Getenv("PULSO_HOST_ROOT")).withDetectedMounts()
 }
 
 func pathWithin(path, root string) bool {
@@ -89,6 +91,20 @@ func (p pathResolver) translate(path string) (string, error) {
 		return "", p.configError
 	}
 	path = strings.TrimSpace(path)
+	forceHost := strings.HasPrefix(path, "host:")
+	if strings.HasPrefix(path, "container:") {
+		path = strings.TrimPrefix(path, "container:")
+		if !filepath.IsAbs(path) || strings.ContainsRune(path, 0) {
+			return "", errors.New("use container:/caminho/absoluto")
+		}
+		return filepath.Clean(path), nil
+	}
+	if forceHost {
+		path = strings.TrimPrefix(path, "host:")
+		if !filepath.IsAbs(path) {
+			return "", errors.New("use host:/caminho/absoluto")
+		}
+	}
 	if strings.ContainsRune(path, 0) {
 		return "", errors.New("caminho inválido")
 	}
@@ -98,7 +114,7 @@ func (p pathResolver) translate(path string) (string, error) {
 	path = filepath.Clean(path)
 	// A path already using a container destination must not be mapped twice.
 	for _, m := range p.mappings {
-		if pathWithin(path, m.Container) {
+		if !forceHost && pathWithin(path, m.Container) {
 			return path, nil
 		}
 	}
@@ -131,11 +147,15 @@ func (s *Server) prepareProcess(cfg types.ProcessConfig) (types.ProcessConfig, e
 	if err != nil {
 		return cfg, err
 	}
-	for _, value := range []*string{&cfg.Entrypoint, &cfg.Interpreter, &cfg.EnvFile} {
-		*value, err = s.paths.translate(*value)
+	for _, value := range []*string{&cfg.Entrypoint, &cfg.Interpreter} {
+		*value, err = s.paths.commandPath(*value)
 		if err != nil {
 			return cfg, err
 		}
+	}
+	cfg.EnvFile, err = s.paths.translate(cfg.EnvFile)
+	if err != nil {
+		return cfg, err
 	}
 	cfg, err = prepareWebProcess(cfg)
 	if err != nil {
@@ -168,16 +188,17 @@ func (s *Server) prepareProcess(cfg types.ProcessConfig) (types.ProcessConfig, e
 }
 
 type pathIssue struct {
-	Error     string        `json:"error"`
-	Code      string        `json:"code"`
-	Path      string        `json:"path,omitempty"`
-	Container bool          `json:"container"`
-	UID       int           `json:"uid"`
-	Roots     []pathMapping `json:"roots,omitempty"`
+	Error      string        `json:"error"`
+	Code       string        `json:"code"`
+	Path       string        `json:"path,omitempty"`
+	Container  bool          `json:"container"`
+	UID        int           `json:"uid"`
+	Roots      []pathMapping `json:"roots,omitempty"`
+	HostAccess bool          `json:"host_access,omitempty"`
 }
 
 func (p pathResolver) issue(err error) pathIssue {
-	out := pathIssue{Error: err.Error(), Code: "invalid_configuration", Container: p.container, UID: os.Geteuid(), Roots: p.mappings}
+	out := pathIssue{Error: err.Error(), Code: "invalid_configuration", Container: p.container, UID: os.Geteuid(), Roots: p.mappings, HostAccess: p.hostRoot != ""}
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
 		out.Path = pathErr.Path
@@ -246,6 +267,9 @@ func (s *Server) handleBrowsePaths(w http.ResponseWriter, r *http.Request) {
 	initial := req.Path
 	if initial == "" {
 		initial = req.Cwd
+		if initial == "" && s.paths.hostRoot != "" {
+			initial = s.paths.hostRoot
+		}
 		if initial == "" && len(s.paths.mappings) > 0 {
 			initial = s.paths.mappings[0].Container
 		}
@@ -287,11 +311,12 @@ func (s *Server) handleBrowsePaths(w http.ResponseWriter, r *http.Request) {
 				directory = target.IsDir()
 			}
 		}
-		files = append(files, browserEntry{Name: entry.Name(), Path: entryPath, Directory: directory, Symlink: symlink})
+		files = append(files, browserEntry{Name: entry.Name(), Path: s.paths.userPath(entryPath), Directory: directory, Symlink: symlink})
 	}
-	roots := s.paths.mappings
-	if len(roots) == 0 {
-		roots = []pathMapping{{Container: cwd}, {Container: string(filepath.Separator)}}
+	roots := s.paths.browserRoots(cwd)
+	parent := filepath.Dir(path)
+	if s.paths.hostRoot != "" && path == s.paths.hostRoot {
+		parent = path
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"path": path, "parent": filepath.Dir(path), "entries": files, "roots": roots, "container": s.paths.container, "uid": os.Geteuid(), "offset": start, "next_offset": end, "has_more": end < len(entries)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"path": s.paths.userPath(path), "parent": s.paths.userPath(parent), "entries": files, "roots": roots, "container": s.paths.container, "host_access": s.paths.hostRoot != "", "uid": os.Geteuid(), "offset": start, "next_offset": end, "has_more": end < len(entries)})
 }

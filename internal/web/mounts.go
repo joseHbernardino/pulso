@@ -44,7 +44,7 @@ func parseProjectMounts(reader io.Reader) []pathMapping {
 			continue
 		}
 		root, target := unescape.Replace(fields[3]), unescape.Replace(fields[4])
-		if !filepath.IsAbs(root) || !filepath.IsAbs(target) || root == "/" || target == "/" {
+		if !filepath.IsAbs(root) || !filepath.IsAbs(target) || root != filepath.Clean(root) || root == "/" || target == "/" {
 			continue
 		}
 		system := false
@@ -69,6 +69,9 @@ func parseProjectMounts(reader io.Reader) []pathMapping {
 
 func (p pathResolver) mergeMounts(mounts []pathMapping) pathResolver {
 	for _, mount := range mounts {
+		if p.hostRoot != "" && pathWithin(mount.Container, p.hostRoot) {
+			continue
+		}
 		info, err := os.Stat(mount.Container)
 		if err != nil || !info.IsDir() {
 			continue

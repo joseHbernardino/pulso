@@ -1,0 +1,29 @@
+# Full host filesystem access. Use only for a trusted administrator.
+# Requires Docker Compose >= 2.24.4. Never relabel / with SELinux z/Z.
+services:
+  pulso:
+    user: "0:0"
+    environment:
+      PULSO_HOST_ROOT: /host
+      PULSO_HOST_APPS_DIR: ""
+      PULSO_PATH_MAPPINGS: ""
+    cap_add:
+      - DAC_OVERRIDE
+      - CHOWN
+      - FOWNER
+    security_opt: !override
+      - no-new-privileges:true
+      - label:disable
+    volumes: !override
+      - pulso_data:/var/lib/pulso
+      # Keep existing /apps paths usable, including an existing PULSO_APPS_DIR=/.
+      - type: bind
+        source: ${PULSO_APPS_DIR:-./applications}
+        target: /apps
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /
+        target: /host
+        bind:
+          create_host_path: false

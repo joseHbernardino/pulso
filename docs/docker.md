@@ -102,6 +102,86 @@ públicos do Container Registry permitem download sem login, conforme a
 Em um fork, ajuste `PULSO_IMAGE` para `ghcr.io/seu-usuario/seu-repositorio:latest`,
 sempre em letras minúsculas. O workflow usa automaticamente o nome do repositório.
 
+## Projetos espalhados pelo servidor: modo host
+
+Para acessar diretórios sem uma raiz de projetos comum, use o override
+`compose.host.yaml`. Ele disponibiliza `/` do servidor Docker em `/host`,
+mantendo `/apps` e o volume de dados existentes. Não é necessário cadastrar
+um volume para cada serviço.
+
+Esse modo executa o Pulso e os programas gerenciados como UID/GID `0:0`, com
+acesso amplo de leitura e escrita ao servidor. Use-o somente com administradores
+confiáveis e restrinja o acesso ao painel. Usuários de visualização continuam
+sem acesso ao seletor e ao conteúdo dos `.env`.
+
+É necessário Docker Compose **2.24.4 ou posterior**, pois o override substitui
+explicitamente as opções de montagem e segurança. Ele não usa `z` ou `Z` nos
+volumes do host: no RHEL, desabilita a separação de rótulos somente deste
+contêiner, sem relabelar a árvore do servidor. A documentação do Docker alerta
+para os efeitos de relabelar diretórios do sistema com `z`/`Z`:
+[bind mounts e SELinux](https://docs.docker.com/engine/storage/bind-mounts/#configure-the-selinux-label).
+
+Para compilar a versão atual do código:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml -f compose.host.yaml up -d --build
+```
+
+Para uma imagem que já contenha esta funcionalidade publicada no GHCR:
+
+```bash
+docker compose -f compose.yaml -f compose.host.yaml pull pulso
+docker compose -f compose.yaml -f compose.host.yaml up -d
+```
+
+Se seus cadastros antigos usam destinos de volumes além de `/apps`, mantenha
+esses destinos ou migre os caminhos antes da troca. O override preserva o volume
+de dados e o mapeamento legado de `/apps`; volumes personalizados precisam ser
+incluídos na sua configuração.
+
+Mantenha os mesmos arquivos `-f` nas operações futuras. Se preferir os comandos
+curtos, configure no `.env` do Compose:
+
+```dotenv
+# Imagem publicada:
+COMPOSE_FILE=compose.yaml:compose.host.yaml
+# Para compilação local, use em vez da linha acima:
+# COMPOSE_FILE=compose.yaml:compose.build.yaml:compose.host.yaml
+```
+
+Com isso, `docker compose up -d`, `docker compose pull pulso` ou
+`docker compose up -d --build` usarão o modo escolhido. No modo de compilação
+local, as atualizações usam `--build`, conforme a seção anterior.
+
+No painel, **Selecionar → Servidor** abre a raiz do servidor. Você pode informar
+`/` e navegar, usar diretamente o caminho original do host ou usar `/host/...`:
+
+| Caminho do servidor | Caminho acessível ao Pulso |
+| --- | --- |
+| `/ctmagent/develop/Servicos/api/.env.dev` | `/host/ctmagent/develop/Servicos/api/.env.dev` |
+| `/opt/outro-servico/.env` | `/host/opt/outro-servico/.env` |
+| `/srv/mais-um/app.py` | `/host/srv/mais-um/app.py` |
+
+A opção **Ambiente do Pulso** mostra o sistema de arquivos da imagem. Os caminhos
+desse ambiente usam o prefixo `container:`, por exemplo
+`container:/usr/bin/python3`. Assim, o interpretador da imagem continua disponível
+mesmo com uma raiz completa do host montada. Comandos simples como `python3`,
+`node` e `sleep` continuam usando o PATH da imagem.
+
+Os programas continuam executando no ambiente do contêiner. Bibliotecas,
+interpretadores e dependências precisam ser compatíveis com ele. A montagem
+não transforma o contêiner em um serviço que executa processos no host.
+
+Em Docker rootless ou com remapeamento de usuários, o UID 0 do contêiner pode
+não ter permissão para ler arquivos protegidos de outros usuários do host.
+Permissões e volumes de sistemas de arquivos somente leitura continuam sendo
+aplicados pelo Linux. Esse modo não altera automaticamente proprietários nem
+permissões das pastas do servidor. Ao editar um `.env` existente, proprietário,
+grupo e permissões do arquivo são preservados.
+
+Se voltar ao perfil sem privilégios, confira a propriedade dos arquivos no
+volume de dados do Pulso, pois o modo host pode criar arquivos com UID 0.
+
 ## Primeiro acesso
 
 Acesse `http://IP_DO_SERVIDOR:5011` e crie o administrador. Consulte o código de
@@ -177,6 +257,8 @@ services:
         bind:
           create_host_path: false
 ```
+
+Para acessar a raiz inteira, use o [modo host](#projetos-espalhados-pelo-servidor-modo-host) em vez de definir apenas `PULSO_APPS_DIR=/`.
 
 Os aliases não criam volumes: a pasta também precisa estar montada. Caminhos
 fora dos volumes disponíveis geram uma orientação de configuração no painel.

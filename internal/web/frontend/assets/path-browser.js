@@ -14,7 +14,8 @@
     const visible = !!issue?.container && ["container_path_unavailable", "path_not_found", "permission_denied", "read_only", "path_mapping_invalid"].includes(issue.code);
     panel.hidden = !visible;
     if (!visible) return;
-    document.getElementById("application-path-explanation").textContent = issue.code === "permission_denied" ? "O caminho foi localizado, mas o acesso foi negado ao usuário do Pulso. A seleção de uma pasta não altera suas permissões." : "O Docker só disponibiliza as pastas montadas nesta instalação. Selecionar mostra os caminhos que o Pulso consegue acessar.";
+    document.getElementById("application-path-explanation").textContent = issue.host_access ? "O acesso ao host está ativo. Confira a existência do caminho e as permissões do volume montado em /host." : issue.code === "permission_denied" ? "O caminho foi localizado, mas o acesso foi negado ao usuário do Pulso. A seleção de uma pasta não altera suas permissões." : "O Docker só disponibiliza as pastas montadas nesta instalação. Selecionar mostra os caminhos que o Pulso consegue acessar.";
+    document.getElementById("application-path-action").textContent = issue.host_access ? "Confira o nome da pasta e as permissões do arquivo selecionado. O volume do servidor já está disponível em /host." : "Para usar uma pasta do servidor em Docker, configure PULSO_APPS_DIR com o caminho absoluto da pasta raiz no Compose e recrie o contêiner. Para vários diretórios fora de uma raiz comum, use compose.host.yaml.";
     const roots = document.getElementById("application-path-roots"); roots.replaceChildren();
     for (const root of issue.roots || []) {
       const line = document.createElement("p");
@@ -39,7 +40,7 @@
       }
       current = data.path; parent = data.parent; offset = data.next_offset;
       $("location").value = current;
-      $("context").textContent = data.container ? "Docker · Selecione um projeto nas pastas disponíveis. Caminhos do servidor com mapeamento configurado são reconhecidos automaticamente." : "Selecione um projeto neste servidor.";
+      $("context").textContent = data.host_access ? "Acesso ao servidor · /host representa a raiz do servidor. Ambiente do Pulso mostra os arquivos e interpretadores da imagem." : data.container ? "Docker · Selecione um projeto nas pastas disponíveis. Caminhos do servidor com mapeamento configurado são reconhecidos automaticamente." : "Selecione um projeto neste servidor.";
       renderRoots(data.roots || []);
       if (!append) $("entries").replaceChildren();
 
@@ -69,7 +70,7 @@
   function renderRoots(roots) {
     $("roots").replaceChildren();
     for (const root of roots) {
-      const entry = button((root.host ? root.host + " → " + root.container : root.container) + (root.read_only ? " (somente leitura)" : ""), () => load(root.container));
+      const entry = button((root.label ? root.label + " · " : "") + (root.host ? root.host + " → " + root.container : root.container) + (root.read_only ? " (somente leitura)" : ""), () => load(root.container));
       entry.title = "Abrir pasta de projetos"; $("roots").append(entry);
     }
   }
@@ -94,7 +95,7 @@
       $("title").textContent = field === "cwd" ? "Selecionar pasta de trabalho" : field === "env-path" ? "Selecionar arquivo .env" : "Selecionar executável ou script";
       const value = (options.value || "").trim();
       const slash = value.lastIndexOf("/");
-      const path = field === "cwd" ? value : slash >= 0 ? value.slice(0, slash) || "/" : cwd;
+      const path = field === "cwd" ? value : slash >= 0 ? (value.slice(0, slash) === "container:" ? "container:/" : value.slice(0, slash) || "/") : cwd;
       const result = new Promise(resolve => { finish = resolve; });
       dialog.showModal(); $("location").value = path; $("location").focus(); load(path);
       return result;

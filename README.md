@@ -111,7 +111,9 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build
 The dashboard is exposed on port `5011`. Release tags publish multi-platform
 images to GHCR; once published, updates use `docker compose pull pulso` followed
 by `docker compose up -d`. See the [Docker deployment guide](docs/docker.md) for
-registry installation, RHEL/SELinux, application paths and persistence.
+registry installation, RHEL/SELinux, application paths and persistence. For
+projects spread across the server, the optional `compose.host.yaml` mounts the
+host at `/host` with administrator access; see the guide before enabling it.
 
 ## Daemon
 

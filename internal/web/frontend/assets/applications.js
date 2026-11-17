@@ -147,7 +147,8 @@
     if (!selected) return;
     $(field).value = selected;
     if (field === "entrypoint" && !$("cwd").value.trim()) {
-      $("cwd").value = selected.slice(0, selected.lastIndexOf("/")) || "/";
+      const parent = selected.slice(0, selected.lastIndexOf("/"));
+      $("cwd").value = parent === "container:" ? "container:/" : parent || "/";
       $("cwd").dispatchEvent(new Event("input", { bubbles: true }));
     }
     $(field).dispatchEvent(new Event("input", { bubbles: true }));
