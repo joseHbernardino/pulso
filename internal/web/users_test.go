@@ -97,6 +97,9 @@ func TestPersistentWebRoles(t *testing.T) {
 	send("GET", "/api/v1/processes/"+process.ID+"/settings", "", viewSession.Token, "", 403)
 	send("GET", "/api/v1/processes/"+process.ID+"/settings", "", "", "", 401)
 	send("POST", "/api/v1/env-files/preview", `{}`, viewSession.Token, "", 403)
+	send("POST", "/api/v1/filesystem/browse", `{}`, viewSession.Token, "", 403)
+	send("POST", "/api/v1/filesystem/browse", `{}`, "", "", 401)
+	send("POST", "/api/v1/filesystem/browse", `{}`, adminSession.Token, "https://attacker.example", 403)
 	send("PATCH", "/api/v1/processes/"+process.ID+"/settings", `{}`, viewSession.Token, "", 403)
 	send("POST", "/api/v1/env-files/preview", `{}`, adminSession.Token, "https://attacker.example", 403)
 	for _, action := range []struct{ method, path string }{

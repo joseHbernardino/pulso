@@ -19,12 +19,12 @@ type applicationSettingsRequest struct {
 	EnvRevision string  `json:"env_revision"`
 }
 
-func settingsError(w http.ResponseWriter, err error) {
+func (s *Server) settingsError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	if errors.Is(err, envfile.ErrConflict) || errors.Is(err, supervisor.ErrConfigConflict) {
 		status = http.StatusConflict
 	}
-	httputil.WriteJSON(w, status, map[string]string{"error": err.Error()})
+	httputil.WriteJSON(w, status, s.paths.issue(err))
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +37,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if cfg.EnvFile != "" {
 		doc, readErr := envfile.Read(cfg.EnvFile)
 		if readErr != nil {
-			result["env_error"] = readErr.Error()
+			result["env_error"] = s.paths.issue(readErr).Error
+			result["env_issue"] = s.paths.issue(readErr)
 		} else {
 			result["env_file"] = doc
 			s.supervisor.ObserveEnvRevision(cfg.EnvFile, doc.Revision)
@@ -56,16 +57,16 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebBody)
 	var req applicationSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		settingsError(w, errors.New("configuração inválida"))
+		s.settingsError(w, errors.New("configuração inválida"))
 		return
 	}
-	cfg, err := prepareWebProcess(req.ProcessConfig)
+	cfg, err := s.prepareProcess(req.ProcessConfig)
 	if err != nil {
-		settingsError(w, err)
+		s.settingsError(w, err)
 		return
 	}
 	if err = s.supervisor.UpdateSettings(chi.URLParam(r, "id"), cfg, req.Revision, req.EnvContent, req.EnvRevision); err != nil {
-		settingsError(w, err)
+		s.settingsError(w, err)
 		return
 	}
 	s.handleGetSettings(w, r)
@@ -78,22 +79,36 @@ func (s *Server) handlePreviewEnv(w http.ResponseWriter, r *http.Request) {
 		Cwd  string `json:"cwd"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		settingsError(w, errors.New("caminho inválido"))
+		s.settingsError(w, errors.New("caminho inválido"))
 		return
 	}
-	path, err := envfile.Resolve(req.Path, req.Cwd)
+	cwd, err := s.paths.absolute(req.Cwd, "")
 	if err != nil {
-		settingsError(w, err)
+		s.settingsError(w, err)
+		return
+	}
+	input, err := s.paths.translate(req.Path)
+	if err != nil {
+		s.settingsError(w, err)
+		return
+	}
+	path, err := envfile.Resolve(input, cwd)
+	if err != nil {
+		s.settingsError(w, err)
 		return
 	}
 	if path == "" {
-		settingsError(w, errors.New("informe o caminho do .env"))
+		s.settingsError(w, errors.New("informe o caminho do .env"))
 		return
 	}
 	doc, err := envfile.Read(path)
 	if err != nil {
-		settingsError(w, err)
+		s.settingsError(w, err)
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, doc)
+	httputil.WriteJSON(w, http.StatusOK, struct {
+		envfile.Document
+		Cwd    string `json:"cwd"`
+		Mapped bool   `json:"mapped"`
+	}{Document: doc, Cwd: cwd, Mapped: req.Path != path || req.Cwd != cwd})
 }

@@ -5,12 +5,13 @@
   let busy = false, editing = null, config = {}, revision = "", envDocument = null, restoreFocus = null;
   let dirty = false, loading = false, generation = 0, originalEnvText = "";
 
-  function showError(message) {
+  function showError(message, issue) {
+    window.PulsoPaths.showGuidance(issue);
     $("error").textContent = message;
     $("error").hidden = false;
     $("error").scrollIntoView({ block: "nearest" });
   }
-  function clearError() { $("error").hidden = true; $("error").textContent = ""; }
+  function clearError() { $("error").hidden = true; $("error").textContent = ""; window.PulsoPaths.showGuidance(null); }
   function notice(message) { $("save-status").textContent = message; $("save-status").hidden = !message; }
   function setBusy(value, label) {
     if (value && !busy) restoreFocus = document.activeElement;
@@ -45,12 +46,18 @@
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
     if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente no painel.");
-    if (!response.ok) throw new Error(data.error || "Não foi possível concluir. Confira os dados e tente novamente.");
+    if (!response.ok) {
+      const error = new Error(data.error || "Não foi possível concluir. Confira os dados e tente novamente.");
+      error.issue = data;
+      throw error;
+    }
     return data;
   }
   const jsonOptions = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
   function applyDocument(doc) {
+    if (doc.path) $("env-path").value = doc.path;
+    if (doc.cwd) $("cwd").value = doc.cwd;
     envDocument = { ...doc, inputPath: $("env-path").value.trim(), cwd: $("cwd").value.trim() };
     $("env-content").disabled = false;
     $("env-content").value = doc.content;
@@ -127,11 +134,25 @@
       // Dotenv is optional, including for existing applications.
       $("env-path").required = false;
       if (data.env_file) applyDocument(data.env_file);
-      if (data.env_error) showError(data.env_error);
+      if (data.env_error) showError(data.env_error, data.env_issue);
       notice(data.pending_changes ? "Alterações salvas. Reinicie a aplicação para aplicar." : "A configuração está em uso. Alterações salvas serão aplicadas na próxima inicialização.");
-    } catch (err) { showError(err.message); $("submit").hidden = true; $("restart-now").hidden = true; }
+    } catch (err) { showError(err.message, err.issue); $("submit").hidden = true; $("restart-now").hidden = true; }
     finally { setBusy(false); if (dialog.open) $("entrypoint").focus({ preventScroll: true }); }
   };
+
+  document.querySelectorAll("[data-browse-path]").forEach(button => button.addEventListener("click", async () => {
+    if (busy || loading) return;
+    const field = button.dataset.browsePath;
+    const selected = await window.PulsoPaths.choose({ field, value: $(field).value, cwd: $("cwd").value });
+    if (!selected) return;
+    $(field).value = selected;
+    if (field === "entrypoint" && !$("cwd").value.trim()) {
+      $("cwd").value = selected.slice(0, selected.lastIndexOf("/")) || "/";
+      $("cwd").dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    $(field).dispatchEvent(new Event("input", { bubbles: true }));
+    if (field === "env-path") $("env-load").click();
+  }));
 
   $("env-load").addEventListener("click", async () => {
     if (busy || loading) return;
@@ -143,7 +164,7 @@
       const doc = await request("/api/v1/env-files/preview", jsonOptions("POST", { path: $("env-path").value.trim(), cwd: $("cwd").value.trim() }));
       if (token !== generation) return;
       applyDocument(doc); changed(); $("env-content").focus();
-    } catch (err) { showError(err.message); }
+    } catch (err) { showError(err.message, err.issue); }
     finally { loading = false; setBusy(false); }
   });
 
@@ -171,7 +192,7 @@
         env: editing && $("env").value === originalEnvText ? config.env : parseEnvironment($("env").value), restart_policy: $("restart").value, autorestart: $("restart").value !== "never",
         interpreter: $("interpreter").value.trim(), use_bundle: !!launch.use_bundle, revision };
       if (path && envDocument) { payload.env_content = $("env-content").value; payload.env_revision = envDocument.revision; }
-    } catch (err) { showError(err.message); return; }
+    } catch (err) { showError(err.message, err.issue); return; }
     setBusy(true);
     try {
       const url = "/api/v1/processes" + (editing ? "/" + encodeURIComponent(editing) + "/settings" : "");
@@ -192,7 +213,7 @@
         document.dispatchEvent(new CustomEvent("pulso:application-created", { detail: data }));
         dialog.close();
       }
-    } catch (err) { showError(err.message); }
+    } catch (err) { showError(err.message, err.issue); }
     finally { setBusy(false); }
   });
 
@@ -204,7 +225,7 @@
       await request("/api/v1/processes/" + encodeURIComponent(editing) + "/restart", { method: "POST" });
       notice("Aplicação reiniciada. A configuração salva e o .env foram carregados.");
       document.dispatchEvent(new CustomEvent("pulso:application-created"));
-    } catch (err) { showError(err.message); }
+    } catch (err) { showError(err.message, err.issue); }
     finally { $("restart-now").textContent = "Reiniciar aplicação"; setBusy(false); }
   });
   reset();

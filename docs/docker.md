@@ -125,6 +125,65 @@ os caminhos ficam assim:
 | `/root/pulso/applications/minha-api/app.py` | `/apps/minha-api/app.py` |
 | `/root/pulso/applications/minha-api/.env` | `/apps/minha-api/.env` |
 
+### Reconhecer caminhos de vários projetos
+
+O painel oferece **Selecionar** nos campos de pasta, programa, interpretador e
+`.env`. O seletor lista as pastas acessíveis ao Pulso e aceita navegação por
+subpastas. Ao selecionar um script com a pasta de trabalho vazia, o formulário
+preenche a pasta do script. A leitura desses metadados é exclusiva de administradores.
+
+No Linux, o Pulso também identifica volumes de projetos já montados usando as
+informações de montagem do kernel. Quando a origem pode ser reconhecida, um
+caminho do host é traduzido para o destino correspondente no contêiner. Isso
+não exige acesso ao socket Docker. Em sistemas de arquivos onde a origem
+reportada difere do caminho usado no host, configure o caminho explicitamente.
+
+Para disponibilizar todos os serviços de uma pasta, configure uma única raiz
+absoluta em `.env` do Compose:
+
+```dotenv
+PULSO_APPS_DIR=/ctmagent/develop/Servicos
+```
+
+Depois execute `docker compose up -d`. A pasta precisa existir e estar acessível
+ao usuário do contêiner. Com a imagem atualizada, estes caminhos são equivalentes
+no painel:
+
+| Caminho informado do host | Caminho usado pelo Pulso |
+| --- | --- |
+| `/ctmagent/develop/Servicos/api/app.py` | `/apps/api/app.py` |
+| `/ctmagent/develop/Servicos/api/.env.dev` | `/apps/api/.env.dev` |
+| `/ctmagent/develop/Servicos/worker/.env` | `/apps/worker/.env` |
+
+A tradução cobre pasta de trabalho, executável/script, interpretador e `.env`.
+Os caminhos salvos são os caminhos do contêiner, permitindo recuperar as
+aplicações após atualizações. Argumentos que contêm caminhos precisam usar os
+caminhos do contêiner.
+
+Para pastas adicionais, monte-as em um override e, se necessário, declare os
+aliases explicitamente no `.env` do Compose:
+
+```dotenv
+PULSO_PATH_MAPPINGS='[{"host":"/srv/outros-projetos","container":"/outros"}]'
+```
+
+```yaml
+services:
+  pulso:
+    volumes:
+      - type: bind
+        source: /srv/outros-projetos
+        target: /outros
+        bind:
+          create_host_path: false
+```
+
+Os aliases não criam volumes: a pasta também precisa estar montada. Caminhos
+fora dos volumes disponíveis geram uma orientação de configuração no painel.
+Falta de permissão, volume somente leitura e programa/interpretador ausente
+também são identificados. O Pulso não altera permissões nem instala dependências
+automaticamente.
+
 Se o Pulso precisar criar ou editar arquivos do projeto, dê ao UID `10001` acesso
 à pasta dedicada. Por exemplo, após copiar um projeto para ela:
 

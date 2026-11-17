@@ -1,6 +1,9 @@
 services:
   pulso:
     image: ${PULSO_IMAGE:-ghcr.io/josehbernardino/pulso:latest}
+    environment:
+      PULSO_HOST_APPS_DIR: ${PULSO_APPS_DIR:-}
+      PULSO_PATH_MAPPINGS: ${PULSO_PATH_MAPPINGS:-}
     restart: unless-stopped
     stop_grace_period: 2m
     ports:

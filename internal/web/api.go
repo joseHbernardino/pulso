@@ -56,9 +56,9 @@ func (s *Server) handleStartProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := prepareWebProcess(req.ProcessConfig)
+	cfg, err := s.prepareProcess(req.ProcessConfig)
 	if err != nil {
-		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		s.settingsError(w, err)
 		return
 	}
 	for _, existing := range s.supervisor.List() {
@@ -70,12 +70,12 @@ func (s *Server) handleStartProcess(w http.ResponseWriter, r *http.Request) {
 
 	if req.EnvContent != nil {
 		if cfg.EnvFile == "" {
-			settingsError(w, fmt.Errorf("informe o caminho do .env"))
+			s.settingsError(w, fmt.Errorf("informe o caminho do .env"))
 			return
 		}
 		doc, err := envfile.Write(cfg.EnvFile, *req.EnvContent, req.EnvRevision)
 		if err != nil {
-			settingsError(w, err)
+			s.settingsError(w, err)
 			return
 		}
 		s.supervisor.ObserveEnvRevision(cfg.EnvFile, doc.Revision)
@@ -88,7 +88,7 @@ func (s *Server) handleStartProcess(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "already exists") {
 			status = http.StatusConflict
 		}
-		httputil.WriteJSON(w, status, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, status, s.paths.issue(err))
 		return
 	}
 
@@ -118,7 +118,7 @@ func (s *Server) handleStopProcess(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRestartProcess(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.supervisor.RestartProcess(context.WithoutCancel(r.Context()), id); err != nil {
-		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, s.paths.issue(err))
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "restarted"})
@@ -128,7 +128,7 @@ func (s *Server) handleRestartProcess(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReloadProcess(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.supervisor.ReloadProcess(context.WithoutCancel(r.Context()), id); err != nil {
-		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, s.paths.issue(err))
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "reloaded"})

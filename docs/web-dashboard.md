@@ -6,7 +6,8 @@ Abra o painel no endereço configurado no servidor e entre como administrador.
 2. Escolha o tipo de execução. **Automático pelo arquivo** reconhece Python,
    JavaScript, TypeScript, Go, Ruby e PHP. Para comandos como `npm` ou um binário,
    escolha **Executável ou comando**.
-3. Informe o executável ou script e a pasta de trabalho. Ambos são caminhos no
+3. Use **Selecionar** para localizar o executável ou script e a pasta de trabalho.
+   Os botões mostram os arquivos disponíveis para esta instalação. Ambos são caminhos no
    servidor em que o Pulso está rodando. Separe os argumentos do nome do programa.
 4. Se a aplicação usa `.env`, informe o **Caminho do arquivo .env** e clique em
    **Carregar arquivo**. Caso contrário, deixe o campo vazio.
@@ -86,3 +87,8 @@ As linguagens e dependências da aplicação precisam estar instaladas no servid
 Use **Ver logs**, **Parar**, **Reiniciar** e **Excluir** para gerenciar o processo.
 Para recuperação após reinicialização do Linux, configure o
 [serviço de inicialização](boot-recovery.md).
+
+Em Docker, volumes reconhecidos ou aliases configurados permitem informar o
+caminho do host; o painel o traduz para o contêiner. Disponibilize uma pasta
+raiz para atender todos os projetos abaixo dela. Veja
+[reconhecimento de caminhos no Docker](docker.md#reconhecer-caminhos-de-vários-projetos).

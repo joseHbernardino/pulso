@@ -28,6 +28,7 @@ RUN apt-get update \
     && install -d -m 0750 -o pulso -g pulso /apps
 COPY --from=build /out/pulso /usr/local/bin/pulso
 COPY LICENSE /usr/share/doc/pulso/LICENSE
+ENV PULSO_CONTAINER=1
 USER pulso:pulso
 WORKDIR /apps
 EXPOSE 9615

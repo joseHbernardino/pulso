@@ -24,6 +24,7 @@ var frontendFS embed.FS
 
 // Server is the web UI + API server.
 type Server struct {
+	paths      pathResolver
 	supervisor *supervisor.Supervisor
 	listen     string
 	auth       auth.Authenticator
@@ -66,6 +67,7 @@ func NewServerWithAuth(sup *supervisor.Supervisor, listen string, authenticator 
 
 	return &Server{
 		supervisor:    sup,
+		paths:         pathResolverFromEnvironment(),
 		listen:        listen,
 		auth:          authenticator,
 		sessions:      sessions,
@@ -132,6 +134,7 @@ func (s *Server) handler() (http.Handler, error) {
 		r.Get("/processes/{id}/settings", s.handleGetSettings)
 		r.Patch("/processes/{id}/settings", s.handleUpdateSettings)
 		r.Post("/env-files/preview", s.handlePreviewEnv)
+		r.Post("/filesystem/browse", s.handleBrowsePaths)
 		r.Get("/system/metrics", s.handleSystemMetrics)
 		r.Get("/users", s.handleListUsers)
 		r.Post("/users", s.handleCreateUser)

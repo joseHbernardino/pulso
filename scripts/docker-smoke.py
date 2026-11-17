@@ -51,6 +51,7 @@ def main():
         docker(
             "run", "-d", "--name", name,
             "--publish", "127.0.0.1::9615",
+            "--env", "PULSO_HOST_APPS_DIR=/host/services",
             "--health-interval", "1s", "--health-start-period", "1s",
             "--mount", "type=volume,source=" + data_volume + ",target=/var/lib/pulso",
             "--mount", "type=volume,source=" + apps_volume + ",target=/apps",
@@ -95,12 +96,22 @@ def main():
             "time.sleep(3600)\n"
         )
         docker("exec", "-i", name, "python3", "-c",
-               "import sys;from pathlib import Path;Path('/apps/app.py').write_text(sys.stdin.read())", input=script)
+               "import sys;from pathlib import Path;Path('/apps/first').mkdir(exist_ok=True);Path('/apps/first/app.py').write_text(sys.stdin.read())", input=script)
         app = api("POST", "/api/v1/processes", {
-            "name": "python-env", "runtime": "python", "entrypoint": "app.py", "cwd": "/apps",
-            "env_file": "/apps/app.env", "env_content": "MARKER=first\n", "env_revision": "missing",
+            "name": "python-env", "runtime": "python", "entrypoint": "/host/services/first/app.py", "cwd": "/host/services/first",
+            "env_file": "/host/services/first/app.env", "env_content": "MARKER=first\n", "env_revision": "missing",
             "restart_policy": "never",
         })
+        assert app["config"]["cwd"] == "/apps/first"
+        assert app["config"]["env_file"] == "/apps/first/app.env"
+        listing = api("POST", "/api/v1/filesystem/browse", {"path": "/host/services/first"})
+        assert listing["path"] == "/apps/first"
+        assert {entry["name"] for entry in listing["entries"]} >= {"app.py", "app.env"}
+        try:
+            api("POST", "/api/v1/env-files/preview", {"path": "/unmounted/path/.env"})
+            raise AssertionError("unmounted host path unexpectedly available")
+        except urllib.error.HTTPError as error:
+            assert json.load(error)["code"] == "container_path_unavailable"
         stopped = api("POST", "/api/v1/processes", {
             "name": "kept-stopped", "runtime": "process", "entrypoint": "sleep",
             "args": ["3600"], "cwd": "/apps", "restart_policy": "never",
@@ -143,7 +154,7 @@ def main():
         wait_until(lambda: marker("third|saved"), "recovery after SIGKILL")
         remove()
         print(json.dumps({"image": image, "non_root": True, "login_persisted": True,
-                          "dotenv_editor": True, "replacement_recovery": True, "crash_recovery": True}))
+                          "dotenv_editor": True, "host_path_mapping": True, "file_browser": True, "replacement_recovery": True, "crash_recovery": True}))
     except Exception:
         logs = subprocess.run(["docker", "logs", "--tail", "50", name], capture_output=True, text=True)
         print(logs.stdout + logs.stderr, file=sys.stderr)
