@@ -123,10 +123,52 @@ jobs:
         run: |
           set -eu
           sudo -E sh scripts/get-pulso.sh --project pulsoci --local --yes
-          curl -fsS -o /dev/null http://127.0.0.1:5098/ || { echo "a aplicação não sobreviveu"; exit 1; }
-          curl -fsS -X POST http://127.0.0.1:5099/api/auth/login \
-            -H 'Content-Type: application/json' \
-            -d '{"username":"admin","password":"SenhaDeTesteCI123!"}' | grep -q '"success":true'
+
+          # Este passo verificava os dois alvos com uma única tentativa
+          # imediata, e falhava com uma linha só — sem dizer qual contêiner
+          # estava como, nem o que o painel registrou. Uma falha assim não é
+          # investigável depois, porque os contêineres já foram removidos pelo
+          # passo de desinstalação. Agora há espera limitada e diagnóstico.
+          diagnostico() {
+            echo "::group::estado dos contêineres"
+            sudo docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' || true
+            echo "::endgroup::"
+            echo "::group::logs do painel"
+            sudo docker logs --tail 60 pulsoci-panel 2>&1 || true
+            echo "::endgroup::"
+            echo "::group::logs do agente"
+            sudo docker logs --tail 60 pulsoci-updater 2>&1 || true
+            echo "::endgroup::"
+          }
+
+          servindo=0
+          for _ in $(seq 1 15); do
+            if curl -fsS -o /dev/null http://127.0.0.1:5098/; then servindo=1; break; fi
+            sleep 2
+          done
+          if [ "$servindo" != 1 ]; then
+            echo "a aplicação não sobreviveu à reinstalação" >&2
+            diagnostico
+            exit 1
+          fi
+
+          autenticou=0
+          resposta=""
+          for _ in $(seq 1 15); do
+            resposta="$(curl -fsS -X POST http://127.0.0.1:5099/api/auth/login \
+              -H 'Content-Type: application/json' \
+              -d '{"username":"admin","password":"SenhaDeTesteCI123!"}' 2>/dev/null || true)"
+            case "$resposta" in
+              *'"success":true'*) autenticou=1; break ;;
+            esac
+            sleep 2
+          done
+          if [ "$autenticou" != 1 ]; then
+            echo "a conta não sobreviveu à reinstalação" >&2
+            echo "última resposta do painel: ${resposta:-(vazia)}" >&2
+            diagnostico
+            exit 1
+          fi
 
       - name: Desinstalar
         if: always()
