@@ -36,7 +36,7 @@ case "${1:-}" in
         exit 0
         ;;
     *)
-        echo "uso: $0 [--check]" >&2
+        echo "uso: sh $0 [--check]" >&2
         exit 2
         ;;
 esac
@@ -74,6 +74,12 @@ build_modules() {
         build "path:$work#$FLAKE_ATTR" --no-link 2>&1
 }
 
+# extract_hash lê o valor verdadeiro da mensagem de divergência do Nix, que
+# traz "specified:" (o gravado) e "got:" (o real).
+extract_hash() {
+    printf '%s\n' "$1" | sed -n 's|.*got: *\(sha256-[A-Za-z0-9+/=]\{10,\}\).*|\1|p' | tail -1
+}
+
 # Primeiro tenta com o hash já gravado. Quando está correto não há nada a
 # fazer, e a derivação baixada aproveita o cache do CI em vez de repetir o
 # download dos módulos a cada execução.
@@ -82,19 +88,35 @@ if output=$(build_modules); then
     exit 0
 fi
 
-echo "o vendorHash gravado não corresponde às dependências atuais; recalculando..." >&2
-
-sed "s|vendorHash = \"[^\"]*\"|vendorHash = \"$FAKE_HASH\"|" \
-    "$root/$PACKAGE_NIX" > "$work/$PACKAGE_NIX"
-if ! grep -q "$FAKE_HASH" "$work/$PACKAGE_NIX"; then
-    echo "erro: não consegui substituir o vendorHash na cópia de trabalho." >&2
+# Um build que falha não significa hash errado. Um erro de avaliação do flake,
+# uma rede indisponível ou um nixpkgs inacessível também o derrubam, e chamar
+# isso de "hash desatualizado" manda quem lê para o lugar errado — foi o que
+# aconteceu quando o flake abortava por falta dos metadados do git.
+if ! printf '%s\n' "$output" | grep -q 'hash mismatch in fixed-output derivation'; then
+    echo "erro: o build das dependências falhou, e não por causa do hash." >&2
+    echo "      O vendorHash gravado ($current) não foi posto em dúvida." >&2
+    echo "      Saída completa do Nix:" >&2
+    printf '%s\n' "$output" >&2
     exit 1
 fi
 
-output=$(build_modules || true)
-computed=$(printf '%s\n' "$output" \
-    | sed -n 's|.*got: *\(sha256-[A-Za-z0-9+/=]\{10,\}\).*|\1|p' \
-    | tail -1)
+# A própria mensagem de divergência já traz o hash verdadeiro, então o caso
+# comum se resolve com um único build.
+computed=$(extract_hash "$output")
+
+if [ -z "$computed" ]; then
+    # Reserva, para o caso de uma versão do Nix não imprimir a linha "got:":
+    # um hash deliberadamente errado a força a aparecer.
+    echo "a mensagem de divergência não trouxe o valor; recalculando..." >&2
+    sed "s|vendorHash = \"[^\"]*\"|vendorHash = \"$FAKE_HASH\"|" \
+        "$root/$PACKAGE_NIX" > "$work/$PACKAGE_NIX"
+    if ! grep -q "$FAKE_HASH" "$work/$PACKAGE_NIX"; then
+        echo "erro: não consegui substituir o vendorHash na cópia de trabalho." >&2
+        exit 1
+    fi
+    output=$(build_modules || true)
+    computed=$(extract_hash "$output")
+fi
 
 if [ -z "$computed" ] || [ "$computed" = "$FAKE_HASH" ]; then
     echo "erro: o Nix não informou o hash verdadeiro. Saída completa:" >&2
@@ -109,7 +131,7 @@ if [ "$mode" = "check" ]; then
     echo "  correto: $computed" >&2
     echo "" >&2
     echo "Corrija com um destes caminhos:" >&2
-    echo "  scripts/update-vendor-hash.sh" >&2
+    echo "  sh scripts/update-vendor-hash.sh" >&2
     echo "  sed -i 's|$current|$computed|' $PACKAGE_NIX" >&2
     exit 1
 fi

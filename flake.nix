@@ -19,7 +19,19 @@
       home-manager,
     }:
     let
-      version = self.shortRev or (builtins.substring 0 8 self.lastModifiedDate);
+      # self.shortRev existe apenas num flake git. Um flake `path:` — que
+      # scripts/update-vendor-hash.sh usa para calcular o vendorHash — e um
+      # tarball de código não têm revisão, e algumas versões do Nix tampouco
+      # expõem lastModifiedDate nesse caso. Sem as reservas a avaliação aborta
+      # com "attribute 'lastModifiedDate' missing", e nem o hash nem um build
+      # a partir do código-fonte avulso seriam possíveis.
+      version =
+        if self ? shortRev then
+          self.shortRev
+        else if self ? lastModifiedDate then
+          builtins.substring 0 8 self.lastModifiedDate
+        else
+          "dev";
 
       pkgsFor = system:
         if system == "x86_64-darwin" then
