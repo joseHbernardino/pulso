@@ -38,7 +38,7 @@ fmt-check:
 
 # Recompute the Nix vendorHash after a dependency change (requires Nix)
 vendor-hash:
-    scripts/update-vendor-hash.sh
+    sh scripts/update-vendor-hash.sh
 
 # Remove build artifacts
 clean:

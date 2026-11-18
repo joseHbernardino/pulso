@@ -60,5 +60,16 @@ func (s *Server) handleApplyUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
 	}
+	// A notificação sai no aceite, não na conclusão: a atualização reinicia o
+	// próprio painel, então este processo não existe mais para avisar depois.
+	actor := ""
+	if session := requestSession(r); session != nil {
+		actor = session.Username
+	}
+	version := job.ToVersion
+	if version == "" {
+		version = request.Version
+	}
+	s.notifySystemUpdate(version, actor)
 	writeJSON(w, 202, job)
 }

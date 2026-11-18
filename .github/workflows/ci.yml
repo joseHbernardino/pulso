@@ -121,7 +121,7 @@ jobs:
       # fazer. Aqui a falha informa o valor correto. Quando o hash está em dia a
       # derivação é só reaproveitada pelos passos seguintes, sem custo extra.
       - name: Verify vendor hash
-        run: scripts/update-vendor-hash.sh --check
+        run: sh scripts/update-vendor-hash.sh --check
 
       - name: Check flake
         run: nix flake check --all-systems

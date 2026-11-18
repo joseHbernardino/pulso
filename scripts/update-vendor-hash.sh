@@ -1,8 +1,12 @@
 #!/bin/sh
 # Recalcula o vendorHash de nix/package.nix.
 #
-#   scripts/update-vendor-hash.sh            # grava o hash correto no arquivo
-#   scripts/update-vendor-hash.sh --check    # apenas verifica (usado no CI)
+#   sh scripts/update-vendor-hash.sh            # grava o hash correto
+#   sh scripts/update-vendor-hash.sh --check    # apenas verifica (usado no CI)
+#
+# Invoque sempre pelo interpretador: este repositório está com
+# core.fileMode=false, então nenhum script carrega o bit de execução no git e
+# um clone novo os recebe com modo 644.
 #
 # Por que isso existe: buildGoModule baixa as dependências em uma derivação de
 # saída fixa, cujo hash é declarado à mão em nix/package.nix. Qualquer mudança
@@ -28,7 +32,7 @@ case "${1:-}" in
     --check) mode="check" ;;
     "") ;;
     -h|--help)
-        sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)

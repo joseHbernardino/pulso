@@ -118,10 +118,10 @@ in fixed-output derivation` message that does not say what to do about it.
 
 ```bash
 # Rewrite the hash in nix/package.nix
-scripts/update-vendor-hash.sh
+sh scripts/update-vendor-hash.sh
 
 # Only verify, printing the correct value on failure (what CI runs)
-scripts/update-vendor-hash.sh --check
+sh scripts/update-vendor-hash.sh --check
 ```
 
 The script needs Nix. Without Nix on the machine, run it inside the official
@@ -130,7 +130,7 @@ container — the image ships no `sed` or `tar`, so `nix shell` provides them:
 ```bash
 docker run --rm -v "$PWD:/src" -w /src nixos/nix \
   nix --extra-experimental-features 'nix-command flakes' \
-      shell nixpkgs#gnused nixpkgs#gnutar -c scripts/update-vendor-hash.sh
+      shell nixpkgs#gnused nixpkgs#gnutar -c sh scripts/update-vendor-hash.sh
 ```
 
 It computes the hash from a copy of the tree, because a flake inside a git
