@@ -112,6 +112,7 @@ Opções:
   --project <nome>    Nome do projeto/instância (padrão pulso)
   --yes               Não faz perguntas
   --status            Mostra o estado da instalação e sai
+  --token             Mostra o código de primeiro acesso ainda pendente
   --uninstall         Remove os contêineres do Pulso (preserva volumes)
   --purge             Remove contêineres E volumes de dados (destrutivo)
   --dry-run           Mostra o que seria feito, sem executar
@@ -144,6 +145,7 @@ while [ $# -gt 0 ]; do
         --open-firewall) OPEN_FIREWALL=yes; shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         --status) ACTION=status; shift ;;
+        --token) ACTION=token; shift ;;
         --uninstall) ACTION=uninstall; shift ;;
         --purge) ACTION=purge; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -803,9 +805,36 @@ do_status() {
             printf '%s: ausente\n' "$name"
         fi
     done
+    token="$(setup_token 2>/dev/null)"
+    if [ -n "$token" ] && [ "$token" != "(dry-run)" ]; then
+        printf '\nCódigo de primeiro acesso (ainda pendente): %s\n' "$token"
+    fi
     printf '\nAplicações gerenciadas:\n'
     docker ps -a --filter "label=io.pulso.application.owner=${PULSO_PROJECT}" \
         --format '  {{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true
+}
+
+# do_token recupera o código de primeiro acesso depois da instalação. Ele existe
+# porque o código é impresso uma única vez, no fim da instalação, e sai do
+# histórico do terminal com facilidade — sem isto, só restaria decorar o caminho
+# do arquivo dentro do contêiner.
+do_token() {
+    # O diagnóstico vai para a saída de erro para que a saída padrão contenha
+    # somente o código, e `TOKEN=$(... --token)` funcione.
+    detect_os >&2
+    docker_ready || die "Docker indisponível."
+    container_exists "$PANEL_NAME" || die "O painel ${PANEL_NAME} não existe. Instale o Pulso primeiro."
+    # Um contêiner parado faria o exec falhar e devolver vazio, o que seria lido
+    # como "administrador já criado" — uma conclusão errada.
+    if [ "$(docker inspect --format '{{.State.Running}}' "$PANEL_NAME" 2>/dev/null || echo false)" != "true" ]; then
+        die "O painel ${PANEL_NAME} não está em execução. Inicie-o com: docker start ${PANEL_NAME}"
+    fi
+    token="$(setup_token)"
+    if [ -n "$token" ] && [ "$token" != "(dry-run)" ]; then
+        printf '%s\n' "$token"
+        return 0
+    fi
+    die "Não há código pendente: a conta de administrador já foi criada. Entre com ela no painel."
 }
 
 do_uninstall() {
@@ -867,10 +896,11 @@ do_install() {
     if [ -n "$token" ] && [ "$token" != "(dry-run)" ]; then
         printf '   Código de primeiro acesso: %s\n' "$token"
     else
-        printf '   Código de primeiro acesso: docker exec %s cat /var/lib/pulso/security/setup-token\n' "$PANEL_NAME"
+        printf '   Código de primeiro acesso: sh get-pulso.sh --token\n'
     fi
     printf '   Projetos no host: %s\n' "$APPS_DIR"
-    printf '\n   Estado:    sh get-pulso.sh --status\n'
+    printf '\n   Código:    sh get-pulso.sh --token    (se perder o de cima)\n'
+    printf '   Estado:    sh get-pulso.sh --status\n'
     printf '   Logs:      docker logs -f %s\n' "$PANEL_NAME"
     printf '   Atualizar: execute este instalador de novo\n'
     firewall_hint
@@ -881,6 +911,7 @@ load_conf
 case "$ACTION" in
     install) do_install ;;
     status) do_status ;;
+    token) do_token ;;
     uninstall) detect_os; do_uninstall ;;
     purge) detect_os; do_purge ;;
 esac

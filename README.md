@@ -71,10 +71,22 @@ private address, or `127.0.0.1`, to keep the panel off the network. Re-running
 the command upgrades an existing installation in place and keeps the port and
 address you chose before.
 
+There is no default password. The panel prints a **first-access code** when the
+installation finishes, and that code is what creates the administrator account.
+It is shown once, so if it scrolls away:
+
+```bash
+sh get-pulso.sh --token        # the pending first-access code, nothing else
+```
+
+The code lives inside the panel container at
+`/var/lib/pulso/security/setup-token`, owned by the unprivileged user that runs
+the panel, and stops existing once the administrator is created.
+
 Once installed, the script is also usable from the host:
 
 ```bash
-sh get-pulso.sh --status       # installation state
+sh get-pulso.sh --status       # installation state, plus a pending code
 sh get-pulso.sh --local        # air-gapped, image already loaded
 sh get-pulso.sh --uninstall    # remove containers, keep the data volumes
 ```

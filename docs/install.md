@@ -52,6 +52,39 @@ e o endereço escolhidos ficam gravados em `/etc/pulso/<projeto>.conf`, então
 não é preciso repeti-los a cada atualização — informá-los de novo é que muda a
 configuração.
 
+## Primeiro acesso
+
+Não existe senha padrão. O painel gera um **código de primeiro acesso** no
+primeiro arranque, e é ele que cria a conta de administrador. O instalador o
+imprime ao terminar:
+
+```
+   Painel:  http://10.0.0.5:5011
+   Código de primeiro acesso: 7f3c1e9a...
+```
+
+Esse código é mostrado uma única vez e sai do histórico do terminal com
+facilidade. Para recuperá-lo depois:
+
+```bash
+sh get-pulso.sh --token
+```
+
+A saída padrão contém **somente** o código, então ele pode ser capturado:
+
+```bash
+TOKEN=$(sh get-pulso.sh --token 2>/dev/null)
+```
+
+O `--status` também o exibe enquanto estiver pendente. O código vive em
+`/var/lib/pulso/security/setup-token`, dentro do contêiner do painel, com
+permissão 0600 e dono `10001` — o mesmo usuário sem privilégios que executa o
+painel. Ele **deixa de existir** quando a conta de administrador é criada, e a
+partir daí `--token` informa isso em vez de devolver vazio.
+
+Se o painel estiver parado, `--token` diz como iniciá-lo em vez de concluir,
+erradamente, que a conta já foi criada.
+
 ## Distribuições validadas
 
 O workflow [Installer](../.github/workflows/installer.yml) executa o instalador
@@ -89,6 +122,7 @@ Distribuições derivadas são reconhecidas por `ID_LIKE` no `/etc/os-release`.
 ```
 --port <n>            Porta publicada (padrão 5011)
 --bind <endereço>     Endereço de escuta; 127.0.0.1 expõe só localmente
+--ip <endereço>       O mesmo que --bind
 --registry            Exige a imagem publicada
 --local               Usa uma imagem já presente no host, sem acessar a rede
 --build               Compila a imagem a partir do código
@@ -99,6 +133,7 @@ Distribuições derivadas são reconhecidas por `ID_LIKE` no `/etc/os-release`.
 --apps-dir <path>     Pasta de projetos no host
 --project <nome>      Nome da instância (permite várias no mesmo host)
 --status              Mostra o estado da instalação
+--token               Mostra o código de primeiro acesso ainda pendente
 --uninstall           Remove os contêineres do Pulso, preservando os dados
 --purge               Remove contêineres e volumes (destrutivo)
 --dry-run             Mostra o que seria feito, sem executar
@@ -108,7 +143,7 @@ Exemplos:
 
 ```bash
 # Painel acessível apenas na própria máquina, em outra porta
-curl -fsSL <url> | sh -s -- --port 8080 --bind 127.0.0.1
+curl -fsSL <url> | sudo sh -s -- --port 8080 --ip 127.0.0.1
 
 # Rede fechada: imagem carregada antes com `docker load`
 sh get-pulso.sh --local --image minha-registry.interna/pulso --tag 1.4.0
@@ -142,7 +177,7 @@ arquivo gravado em `/etc/pulso/<projeto>.conf`, recria o painel e o agente, e
 **não reinicia os contêineres das aplicações**.
 
 ```bash
-curl -fsSL <url> | sh
+curl -fsSL <url> | sudo sh
 ```
 
 ## Várias instâncias no mesmo host
