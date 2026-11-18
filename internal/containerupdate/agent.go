@@ -54,6 +54,8 @@ type Agent struct {
 	checkError string
 	cancel     context.CancelFunc
 	ctx        context.Context
+	appsMu     sync.Mutex
+	appsBusy   bool
 }
 
 func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
@@ -363,6 +365,11 @@ func (a *Agent) Serve(ctx context.Context) error {
 		}
 	}
 	mux := http.NewServeMux()
+	if os.Getenv("PULSO_APPLICATIONS_ENABLED") == "1" {
+		if err := a.registerApplications(mux); err != nil {
+			return err
+		}
+	}
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, a.info(r.Context())) })
 	mux.HandleFunc("POST /check", func(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +391,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 		}
 		respond(w, 202, status)
 	})
-	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute, WriteTimeout: 30 * time.Second}
 	a.recoverJob(ctx)
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)

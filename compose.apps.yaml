@@ -1,0 +1,18 @@
+# Independent application containers, managed through the companion's Unix socket.
+# Keep this after compose.host.yaml when host access is enabled.
+services:
+  pulso:
+    environment:
+      PULSO_UPDATE_DIR: /var/run/pulso-update
+      PULSO_APPLICATIONS_ENABLED: "1"
+    volumes:
+      - pulso_updates:/var/run/pulso-update:ro
+  pulso-updater:
+    extends:
+      file: compose.update.yaml
+      service: pulso-updater
+    image: ${PULSO_AGENT_IMAGE:-${PULSO_IMAGE:-ghcr.io/josehbernardino/pulso:latest}}
+    environment:
+      PULSO_APPLICATIONS_ENABLED: "1"
+volumes:
+  pulso_updates:

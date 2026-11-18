@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v1.5.0
 	github.com/mattn/go-isatty v0.0.24
+	github.com/moby/patternmatcher v0.6.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2

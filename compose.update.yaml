@@ -19,7 +19,7 @@ services:
     stop_grace_period: 30s
     read_only: true
     tmpfs:
-      - /tmp:rw,nosuid,size=32m
+      - /tmp:rw,nosuid,size=256m
     volumes:
       - pulso_updates:/var/run/pulso-update
       - type: bind

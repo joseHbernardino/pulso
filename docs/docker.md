@@ -1,5 +1,10 @@
 # Pulso em Docker
 
+Para instalar e gerenciar projetos pelo painel sem editar arquivos Compose, use
+a [instalação assistida e os contêineres por aplicação](projects.md).
+As instruções abaixo continuam disponíveis para configurar manualmente o modo
+de processos compartilhados.
+
 O Pulso pode rodar como um serviço Docker. O host precisa do Docker Engine e do
 plugin Docker Compose; Go, Python e Node.js não precisam estar instalados no host.
 A imagem inclui o binário compilado, Node.js (versão fixada no Dockerfile), npm,

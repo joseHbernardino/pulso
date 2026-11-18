@@ -37,6 +37,7 @@ func TestDockerUpdateAndRollback(t *testing.T) {
 	prefix := fmt.Sprintf("pulso-update-test-%d", time.Now().UnixNano())
 	network, data, apps := prefix+"-net", prefix+"-data", prefix+"-apps"
 	appName, agentName := prefix+"-pulso-1", prefix+"-pulso-updater-1"
+	independentName := prefix + "-independent"
 	run := func(args ...string) string {
 		t.Helper()
 		out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
@@ -46,6 +47,7 @@ func TestDockerUpdateAndRollback(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	t.Cleanup(func() {
+		_ = exec.Command("docker", "rm", "-f", independentName).Run()
 		// All test-owned containers carry this project label, including backups/workers.
 		out, _ := exec.Command("docker", "ps", "-aq", "--filter", "label="+projectLabel+"="+prefix).Output()
 		for _, id := range strings.Fields(string(out)) {
@@ -56,6 +58,8 @@ func TestDockerUpdateAndRollback(t *testing.T) {
 		_ = exec.Command("docker", "image", "rm", prefix+":latest", prefix+":latest-python311").Run()
 	})
 	run("network", "create", network)
+	run("run", "-d", "--name", independentName, "--network", network, "--label", applicationOwner+"="+prefix, "--label", applicationLabel+"=0123456789abcdef01234567", "--no-healthcheck", "--entrypoint", "/bin/sh", oldImage, "-c", "exec sleep 600")
+	independentPID := run("inspect", "--format", "{{.State.Pid}}", independentName)
 	run("tag", oldImage, prefix+":latest")
 	run("tag", oldImage, prefix+":latest-python311")
 	dir := t.TempDir()
@@ -272,5 +276,8 @@ func TestDockerUpdateAndRollback(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(dir, "job.json")); err != nil {
 		t.Fatal(err)
+	}
+	if got := run("inspect", "--format", "{{.State.Pid}}", independentName); got != independentPID || got == "0" {
+		t.Fatal("portal update or rollback interrupted an independent application")
 	}
 }

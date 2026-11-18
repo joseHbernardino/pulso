@@ -39,6 +39,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - licenses/*
 
 checksum:
   name_template: checksums.txt
@@ -83,3 +84,7 @@ nfpms:
     contents:
       - src: ./LICENSE
         dst: /usr/share/doc/pulso/LICENSE
+      - src: ./licenses/moby-patternmatcher.LICENSE
+        dst: /usr/share/doc/pulso/licenses/moby-patternmatcher.LICENSE
+      - src: ./licenses/moby-patternmatcher.NOTICE
+        dst: /usr/share/doc/pulso/licenses/moby-patternmatcher.NOTICE

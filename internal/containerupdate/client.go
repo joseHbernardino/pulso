@@ -43,10 +43,13 @@ func (c *Client) call(ctx context.Context, method, path string, body, result any
 			Error string `json:"error"`
 		}
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&problem)
+		if problem.Error == "" {
+			return fmt.Errorf("serviço auxiliar sem suporte a este recurso (HTTP %d); atualize com bash scripts/pulso-docker.sh start", resp.StatusCode)
+		}
 		return fmt.Errorf("%s", problem.Error)
 	}
 	if result != nil {
-		return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(result)
+		return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(result)
 	}
 	return nil
 }
@@ -64,4 +67,45 @@ func (c *Client) Begin(ctx context.Context, version string) (*Status, error) {
 	var result Status
 	err := c.call(ctx, "POST", "/update", map[string]string{"version": version}, &result)
 	return &result, err
+}
+func (c *Client) Applications(ctx context.Context) ([]ContainerApplication, error) {
+	var result []ContainerApplication
+	err := c.call(ctx, "GET", "/applications", nil, &result)
+	return result, err
+}
+func (c *Client) Application(ctx context.Context, id string) (*ContainerApplication, error) {
+	if !validAppID(id) {
+		return nil, fmt.Errorf("identificador inválido")
+	}
+	var app ContainerApplication
+	err := c.call(ctx, "GET", "/applications/"+id, nil, &app)
+	return &app, err
+}
+func (c *Client) DeployApplication(ctx context.Context, id string, cfg ApplicationConfig) (*ContainerApplication, error) {
+	if id != "" && !validAppID(id) {
+		return nil, fmt.Errorf("identificador inválido")
+	}
+	method, path := "POST", "/applications"
+	if id != "" {
+		method, path = "PUT", "/applications/"+id
+	}
+	var result ContainerApplication
+	err := c.call(ctx, method, path, cfg, &result)
+	return &result, err
+}
+func (c *Client) ApplicationAction(ctx context.Context, id, action string) error {
+	if !validAppID(id) || (action != "start" && action != "stop" && action != "restart" && action != "delete") {
+		return fmt.Errorf("ação ou identificador inválido")
+	}
+	return c.call(ctx, "POST", "/applications/"+id+"/"+action, nil, nil)
+}
+func (c *Client) ApplicationLogs(ctx context.Context, id string) (string, error) {
+	if !validAppID(id) {
+		return "", fmt.Errorf("identificador inválido")
+	}
+	var result struct {
+		Logs string `json:"logs"`
+	}
+	err := c.call(ctx, "GET", "/applications/"+id+"/logs", nil, &result)
+	return result.Logs, err
 }

@@ -45,6 +45,9 @@ jobs:
         run: |
           python3 scripts/docker-smoke.py pulso:smoke
           python3 scripts/docker-host-smoke.py pulso:smoke
+      - name: Test automatic installation and preservation of existing settings
+        if: matrix.target == 'runtime'
+        run: python3 scripts/docker-install-smoke.py
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: matrix.target == 'runtime'
         with:

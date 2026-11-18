@@ -108,9 +108,15 @@ func (s *Server) handlePreviewEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc.Path = s.paths.userPath(doc.Path)
+	values, err := envfile.Parse(doc.Content)
+	if err != nil {
+		s.settingsError(w, err)
+		return
+	}
 	httputil.WriteJSON(w, http.StatusOK, struct {
 		envfile.Document
-		Cwd    string `json:"cwd"`
-		Mapped bool   `json:"mapped"`
-	}{Document: doc, Cwd: s.paths.userPath(cwd), Mapped: req.Path != path || req.Cwd != cwd})
+		Cwd    string            `json:"cwd"`
+		Mapped bool              `json:"mapped"`
+		Values map[string]string `json:"values"`
+	}{Document: doc, Cwd: s.paths.userPath(cwd), Mapped: req.Path != path || req.Cwd != cwd, Values: values})
 }

@@ -68,6 +68,7 @@
     generation++;
     originalEnvText = "";
     form.reset();
+    window.PulsoProjects?.reset();
     editing = null; config = {}; revision = ""; envDocument = null; dirty = false; loading = false;
     $("name").readOnly = false;
     $("env-path").required = false;
@@ -111,6 +112,7 @@
   window.openApplicationSettings = async id => {
     if (!window.pulsoCanManage || dialog.open) return;
     reset(); editing = id;
+    window.PulsoProjects?.editing();
     $("title").textContent = "Editar aplicação";
     $("description").textContent = "Salve a configuração e reinicie quando quiser aplicar.";
     $("example").hidden = true;
@@ -167,6 +169,23 @@
       applyDocument(doc); changed(); $("env-content").focus();
     } catch (err) { showError(err.message, err.issue); }
     finally { loading = false; setBusy(false); }
+  });
+
+  document.addEventListener("pulso:project-selected", async event => {
+    if (editing || busy || loading || !dialog.open || !window.pulsoCanManage) return;
+    const { config: suggestion, envFile } = event.detail;
+    config = { ...config, max_restarts: suggestion.max_restarts };
+    $("name").value = suggestion.name; $("runtime").value = suggestion.runtime;
+    $("entrypoint").value = suggestion.entrypoint; $("cwd").value = suggestion.cwd;
+    $("args").value = (suggestion.args || []).join("\n"); $("interpreter").value = suggestion.interpreter || "";
+    $("env-path").value = envFile; envDocument = null;
+    $("env-content").value = ""; $("env-content").disabled = true;
+    $("env-load").textContent = "Carregar arquivo";
+    $("env-status").textContent = envFile ? "Carregue o arquivo de ambiente antes de iniciar." : "A aplicação não usará um arquivo .env.";
+    $("options").open = !!suggestion.args?.length || !!suggestion.interpreter;
+    changed();
+    if (envFile) $("env-load").click();
+    else $("name").focus();
   });
 
   $("example").addEventListener("click", () => {

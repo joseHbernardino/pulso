@@ -37,6 +37,7 @@ type Server struct {
 	hub             *WSHub
 
 	loginMu       sync.Mutex
+	deployMu      sync.Mutex
 	loginFailures map[string][]time.Time
 }
 
@@ -125,6 +126,9 @@ func (s *Server) handler() (http.Handler, error) {
 	// Auth routes (public paths — WebAuthMiddleware lets these through).
 	r.Get("/login", s.handleLoginPage)
 	r.Get("/users", s.handleUsersPage)
+	r.Get("/projects", s.handleContainerPage)
+	r.Get("/processes", s.handleProcessPage)
+	r.Get("/", s.handleHomePage)
 	r.Post("/api/auth/login", s.handleLoginAPI)
 	r.Post("/api/auth/logout", s.handleLogoutAPI)
 	r.Get("/api/auth/status", s.handleAuthStatusAPI)
@@ -144,6 +148,13 @@ func (s *Server) handler() (http.Handler, error) {
 		r.Patch("/processes/{id}/settings", s.handleUpdateSettings)
 		r.Post("/env-files/preview", s.handlePreviewEnv)
 		r.Post("/filesystem/browse", s.handleBrowsePaths)
+		r.Post("/projects/inspect", s.handleInspectProject)
+		r.Get("/container-applications", s.handleContainerApplications)
+		r.Get("/container-applications/{id}", s.handleContainerSettings)
+		r.Post("/container-applications", s.handleDeployContainer)
+		r.Put("/container-applications/{id}", s.handleDeployContainer)
+		r.Post("/container-applications/{id}/{action}", s.handleContainerAction)
+		r.Get("/container-applications/{id}/logs", s.handleContainerLogs)
 		r.Get("/system/metrics", s.handleSystemMetrics)
 		r.Get("/system/version", s.handleVersion)
 		r.Get("/system/updates", s.handleUpdateStatus)

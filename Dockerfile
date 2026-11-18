@@ -21,6 +21,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM python:3.11-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS python311
 
+FROM docker:29.10.0-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d AS dockercli
+
 FROM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS runtime-base
 ARG VERSION=dev
 ARG REVISION=unknown
@@ -36,7 +38,10 @@ RUN apt-get update \
     && install -d -m 0700 -o pulso -g pulso /var/lib/pulso \
     && install -d -m 0750 -o pulso -g pulso /apps
 COPY --from=build /out/pulso /usr/local/bin/pulso
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY LICENSE /usr/share/doc/pulso/LICENSE
+COPY licenses /usr/share/doc/pulso/licenses
 ENV PULSO_CONTAINER=1
 USER pulso:pulso
 WORKDIR /apps

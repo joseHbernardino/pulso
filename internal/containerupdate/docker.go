@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +17,7 @@ import (
 
 // Engine talks only to a local Unix socket; it is never exposed through the web API.
 var backupNamePattern = regexp.MustCompile(`-pulso-backup-[0-9a-f]{12}$`)
+var errDockerNotFound = errors.New("recurso Docker não encontrado")
 
 type Engine struct {
 	client *http.Client
@@ -26,6 +28,7 @@ type container struct {
 	ID              string `json:"Id"`
 	Name            string
 	Image           string
+	RestartCount    int
 	Config          map[string]any
 	HostConfig      map[string]any
 	NetworkSettings struct {
@@ -37,9 +40,10 @@ type container struct {
 		RW                      bool
 	}
 	State struct {
-		Running  bool
-		ExitCode int
-		Health   *struct{ Status string }
+		Running    bool
+		Restarting bool
+		ExitCode   int
+		Health     *struct{ Status string }
 	}
 }
 
@@ -111,6 +115,9 @@ func (d *Engine) call(ctx context.Context, method, path string, body any) (*http
 		defer func() { _ = resp.Body.Close() }()
 		var problem struct{ Message string }
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&problem)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: docker %s %s: HTTP %d: %s", errDockerNotFound, method, strings.Split(path, "?")[0], resp.StatusCode, problem.Message)
+		}
 		return nil, fmt.Errorf("docker %s %s: HTTP %d: %s", method, strings.Split(path, "?")[0], resp.StatusCode, problem.Message)
 	}
 	return resp, nil

@@ -9,6 +9,8 @@
 !pkg/
 !pkg/**
 !LICENSE
+!licenses/
+!licenses/**
 **/.env
 **/.env.*
 **/*.sqlite

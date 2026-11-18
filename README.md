@@ -14,6 +14,7 @@ Pulso manages your applications — Go, Python, Node.js/TypeScript, Bun, Deno, R
 
 ## Features
 
+- **Application containers** — deploy images, Node.js, Python and Dockerfile projects from the dashboard with separate environments, persistent storage and resource limits
 - **Multi-runtime support** — Go, Python, Node.js/TypeScript, Bun, Deno, Ruby, PHP
 - **Auto-detection** — Pulso detects your project's runtime automatically
 - **Process lifecycle** — start, stop, restart, reload, with configurable restart policies
@@ -97,6 +98,20 @@ pulso doctor
 ```
 
 ## Docker
+
+Use the assisted installation to preserve Compose settings and manage independent
+application containers from the dashboard:
+
+```bash
+bash scripts/pulso-docker.sh install
+# Existing projects spread across the server:
+# bash scripts/pulso-docker.sh install --host
+```
+
+The **Projects** page supports ready-made images, Node.js, Python and Dockerfile
+builds, with environment variables, persistent storage and CPU/memory limits per
+application. Existing processes remain available under **Processes**. See the
+[project deployment guide](docs/projects.md) for installation, upgrades and limits.
 
 The dashboard displays the installed version. Administrators can enable
 [container image updates from the portal](docs/updates.md), including health checks
