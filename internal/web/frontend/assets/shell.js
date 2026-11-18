@@ -1,6 +1,10 @@
 (() => {
   "use strict";
   const paths = {
+    panel:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+    more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    package:'<path d="m12 3 9 5v8l-9 5-9-5V8l9-5Zm0 9 9-4m-9 4-9-4m9 4v9m-5-15 10 5"/>',
+    external:'<path d="M15 3h6v6m0-6-10 10M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/>',
     folder:'<path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Zm0 0V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>',
     grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.9M16 3a4 4 0 0 1 0 8"/><circle cx="9" cy="7" r="4"/>',
@@ -25,16 +29,62 @@
   function hydrate(scope=document){scope.querySelectorAll("[data-icon]").forEach(el=>{el.replaceChildren(icon(el.dataset.icon));});}
   function notify(message,type="success"){let host=document.getElementById("toast-container");if(!host){host=document.createElement("div");host.id="toast-container";host.setAttribute("role","status");host.setAttribute("aria-live","polite");document.body.append(host);}const toast=document.createElement("div");toast.className="toast toast-"+type;const label=document.createElement("span");label.textContent=message;toast.append(icon(type==="error"?"alert":"check"),label);host.append(toast);setTimeout(()=>{toast.classList.add("toast-out");setTimeout(()=>toast.remove(),200);},4500);}
   window.PulsoUI={icon,hydrate,notify};
-  const mount=document.getElementById("app-sidebar");
-  if(mount){const section=document.body.dataset.page||"applications";const users=section==="users", containers=section==="projects";mount.innerHTML=`<a class="brand" href="/" aria-label="Pulso, início"><img src="/assets/pulso-mark.svg" alt=""><span class="brand-word">pulso</span></a><div class="workspace"><span class="workspace-symbol" data-icon="server"></span><div><strong>Este servidor</strong><small>Espaço de trabalho</small></div><span class="workspace-indicator" aria-hidden="true"></span></div><nav aria-label="Navegação principal"><p class="nav-group-label">Gerenciar</p><a class="nav-item ${containers?"is-active":""}" href="/projects" ${containers?'aria-current="page"':''}><span data-icon="folder"></span>Projetos</a><a class="nav-item ${!users&&!containers?"is-active":""}" href="/processes" ${!users&&!containers?'aria-current="page"':''}><span data-icon="grid"></span>Processos</a><a class="nav-item nav-users ${users?"is-active":""}" href="/users" data-admin-only hidden ${users?'aria-current="page"':''}><span data-icon="users"></span>Usuários e acesso</a></nav><div class="sidebar-bottom"><div class="sidebar-signature"><span class="signature-icon" data-icon="play"></span><div><strong>No ritmo certo.</strong><p>Suas aplicações, sob controle.</p></div></div><div class="sidebar-footer"><span>Pulso</span><span>Gerenciador de aplicações</span></div></div>`;
-    const header=document.getElementById("app-header");if(header)header.innerHTML=`<button class="btn btn-icon mobile-menu" id="navigation-toggle" aria-label="Abrir navegação" aria-expanded="false" aria-controls="app-sidebar"><span data-icon="menu"></span></button><nav class="breadcrumb" aria-label="Localização"><span data-icon="grid"></span><span>Espaço de trabalho</span><span class="breadcrumb-divider">/</span><strong>${users?"Usuários e acesso":containers?"Projetos":"Processos"}</strong></nav><div class="header-right"><span class="server-label"><span data-icon="server"></span>Servidor local</span><details class="account-menu" id="account-menu"><summary title="Menu da sua conta"><span class="avatar account-avatar" aria-hidden="true" data-account-initials>P</span><span class="account-label"><strong id="account-name">Sua conta</strong><small id="account-role">Verificando acesso…</small></span><span data-icon="chevron"></span></summary><div class="account-dropdown"><p>Conectado ao Pulso</p><button id="account-logout" type="button" hidden><span data-icon="logout"></span>Sair da conta</button></div></details></div>`;
-    const toggle=document.getElementById("navigation-toggle");
-    const mobile=matchMedia("(max-width:920px)");
-    const overlay=document.getElementById("navigation-overlay");
-    function syncMenu(){const open=document.body.classList.contains("navigation-open");mount.inert=mobile.matches&&!open;toggle?.setAttribute("aria-expanded",String(open));}
-    function closeMenu(){const wasOpen=document.body.classList.contains("navigation-open");document.body.classList.remove("navigation-open");syncMenu();if(wasOpen)toggle?.focus();}
-    mobile.addEventListener("change",()=>{document.body.classList.remove("navigation-open");syncMenu();});syncMenu();
-    toggle?.addEventListener("click",()=>{const open=document.body.classList.toggle("navigation-open");syncMenu();if(open)mount.querySelector("a")?.focus();});document.getElementById("navigation-overlay")?.addEventListener("click",closeMenu);document.addEventListener("keydown",e=>{if(e.key==="Tab"&&mobile.matches&&document.body.classList.contains("navigation-open")){const links=[...mount.querySelectorAll("a[href]")].filter(el=>!el.hidden);const first=links[0],last=links[links.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}if(e.key==="Escape"){closeMenu();document.getElementById("account-menu")?.removeAttribute("open");}});document.addEventListener("click",e=>{const menu=document.getElementById("account-menu");if(menu?.open&&!menu.contains(e.target))menu.open=false;});
+  const mount = document.getElementById("app-sidebar");
+  if (mount) {
+    const section = document.body.dataset.page || "applications";
+    const users = section === "users", projects = section === "projects";
+    const navItem = (href, label, symbol, active, extra = "") => `<a class="nav-item ${active ? "is-active" : ""}" href="${href}" title="${label}" ${active ? 'aria-current="page"' : ""} ${extra}><span data-icon="${symbol}"></span><span class="nav-label">${label}</span></a>`;
+    mount.innerHTML = `<a class="brand" href="/" aria-label="Pulso, início"><span class="brand-mark"><img src="/assets/pulso-mark.svg" alt=""></span><span class="brand-copy"><span class="brand-word">pulso</span><span class="brand-caption">Gerenciador de aplicações</span></span></a>
+      <div class="workspace"><span class="workspace-symbol" data-icon="server"></span><div><strong>Servidor local</strong><small>Espaço de trabalho</small></div><span class="workspace-indicator" aria-hidden="true"></span></div>
+      <nav aria-label="Navegação principal"><p class="nav-group-label">Espaço de trabalho</p>${navItem("/projects", "Projetos", "folder", projects)}${navItem("/processes", "Processos", "terminal", !users && !projects)}<p class="nav-group-label settings-label" data-user-nav-only hidden>Equipe</p>${navItem("/users", "Usuários e acesso", "users", users, 'data-admin-only data-user-nav-only hidden')}</nav>
+      <div class="sidebar-bottom"><div class="sidebar-health"><span class="status-dot" aria-hidden="true"></span>Ambiente local</div><details class="account-menu" id="account-menu"><summary title="Menu da sua conta"><span class="avatar account-avatar" aria-hidden="true" data-account-initials>P</span><span class="account-label"><strong id="account-name">Sua conta</strong><small id="account-role">Verificando acesso…</small></span><span data-icon="chevron"></span></summary><div class="account-dropdown"><p>Conectado ao Pulso</p><button id="account-logout" type="button" hidden><span data-icon="logout"></span>Sair da conta</button></div></details><div class="sidebar-footer"><span>Pulso</span><span>Gerenciador de aplicações</span></div></div>`;
+    mount.querySelector('a[href="/users"]').classList.add("nav-users");
+    const header = document.getElementById("app-header");
+    if (header) header.innerHTML = `<button class="btn btn-icon mobile-menu" id="navigation-toggle" aria-label="Recolher navegação" aria-expanded="true" aria-controls="app-sidebar"><span data-icon="panel"></span></button><span class="header-separator" aria-hidden="true"></span><nav class="breadcrumb" aria-label="Localização"><span>Espaço de trabalho</span><span class="breadcrumb-divider">/</span><strong>${users ? "Usuários e acesso" : projects ? "Projetos" : "Processos"}</strong></nav><div class="header-right"><span class="server-label"><span data-icon="server"></span>Local</span><details class="theme-menu"><summary class="btn btn-icon btn-ghost" aria-label="Escolher tema" title="Escolher tema"><span data-theme-icon></span></summary><div class="theme-options"><button type="button" data-set-theme="dark">Escuro</button><button type="button" data-set-theme="light">Claro</button><button type="button" data-set-theme="system">Sistema</button></div></details></div>`;
+    const toggle = document.getElementById("navigation-toggle");
+    const mobile = matchMedia("(max-width:920px)");
+    try { document.body.classList.toggle("sidebar-collapsed", localStorage.getItem("pulso-sidebar-collapsed") === "true"); } catch (_) { /* Optional preference. */ }
+    function syncMenu() {
+      const open = document.body.classList.contains("navigation-open");
+      mount.inert = mobile.matches && !open;
+      const expanded = mobile.matches ? open : !document.body.classList.contains("sidebar-collapsed");
+      toggle?.setAttribute("aria-expanded", String(expanded));
+      toggle?.setAttribute("aria-label", expanded ? "Recolher navegação" : "Abrir navegação");
+    }
+    function closeMenu() {
+      const wasOpen = document.body.classList.contains("navigation-open");
+      document.body.classList.remove("navigation-open"); syncMenu();
+      if (wasOpen) toggle?.focus();
+    }
+    mobile.addEventListener("change", () => { document.body.classList.remove("navigation-open"); syncMenu(); });
+    toggle?.addEventListener("click", () => {
+      if (mobile.matches) {
+        const open = document.body.classList.toggle("navigation-open"); syncMenu();
+        if (open) mount.querySelector("a")?.focus();
+      } else {
+        const collapsed = document.body.classList.toggle("sidebar-collapsed");
+        try { localStorage.setItem("pulso-sidebar-collapsed", String(collapsed)); } catch (_) { /* Optional preference. */ }
+        syncMenu();
+      }
+    });
+    document.getElementById("navigation-overlay")?.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", event => {
+      if (event.key === "Tab" && mobile.matches && document.body.classList.contains("navigation-open")) {
+        const items = [...mount.querySelectorAll('a[href],button,summary')].filter(el => {
+          const closed = el.closest("details:not([open])");
+          return !el.disabled && el.getClientRects().length && (!closed || closed.querySelector(":scope > summary") === el);
+        });
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+      if (event.key === "Escape") { closeMenu(); document.getElementById("account-menu")?.removeAttribute("open"); }
+    });
+    document.addEventListener("click", event => {
+      const menu = document.getElementById("account-menu");
+      if (menu?.open && !menu.contains(event.target)) menu.open = false;
+    });
+    syncMenu(); window.PulsoTheme?.refresh();
   }
   hydrate();
 })();

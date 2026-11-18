@@ -15,7 +15,7 @@
       document.querySelectorAll("[data-account-initials]").forEach(el=>el.textContent=(state.username||"PL").slice(0,2).toLocaleUpperCase("pt-BR"));
       if(role) role.textContent=window.pulsoCanManage ? "Administrador" : "Visualização";
       if(logout) logout.hidden=state.mode==="disabled";
-      if(state.mode!=="users") document.querySelectorAll(".nav-users").forEach(el=>el.hidden=true);
+      document.querySelectorAll("[data-user-nav-only]").forEach(el=>el.hidden=state.mode!=="users"||!window.pulsoCanManage);
       document.dispatchEvent(new CustomEvent("pulso:access-ready", {detail:state}));
     } catch(_) { if(document.getElementById("account-role")) document.getElementById("account-role").textContent="Verificando acesso…"; }
   }

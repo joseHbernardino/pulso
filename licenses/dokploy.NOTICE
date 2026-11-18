@@ -1,0 +1,11 @@
+Pulso dashboard visual adaptation
+
+Layout organization and neutral theme tokens adapted from Dokploy core
+(apps/dokploy/styles/globals.css and components/layouts/side.tsx).
+Copyright 2026-present Dokploy Technology, Inc. Licensed under Apache-2.0.
+The layout was adapted to Pulso HTML/CSS/JavaScript; proprietary modules and
+Dokploy trademarks, logos, business logic and backend are not included.
+
+The full Apache-2.0 text is included in docker-cli.LICENSE in this directory.
+Inter is distributed under the SIL Open Font License; see the embedded
+frontend assets/fonts/Inter-OFL.txt file.

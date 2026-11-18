@@ -10,7 +10,7 @@ Pulso manages your applications — Go, Python, Node.js/TypeScript, Bun, Deno, R
 
 </div>
 
-[Visual identity and assets](docs/identity.md) · [Publishing](docs/publishing.md)
+[Visual identity and assets](docs/identity.md) · [Dashboard interface](docs/interface.md) · [Publishing](docs/publishing.md)
 
 ## Features
 

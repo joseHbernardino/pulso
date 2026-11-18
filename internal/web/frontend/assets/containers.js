@@ -4,7 +4,7 @@
   const page = name => document.getElementById("containers-" + name);
   const dialog = $("dialog");
   let apps = [], editing = null, polling = false, saving = false, loadingEnv = false, logID = "", originalEnv = "", dirty = false;
-  let renderedState = "";
+  let renderedState = "", statusFilter = "all";
   const error = (element, message) => { element.textContent = message || ""; element.hidden = !message; };
   function setWorking() {
     const working = saving || loadingEnv;
@@ -39,12 +39,12 @@
     if (!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
     return data;
   }
-  function button(label, handler, disabled = false) {
+  function button(label, handler, disabled = false, symbol = "") {
     const element = document.createElement("button"); element.type = "button"; element.className = "btn"; element.textContent = label;
-    element.disabled = disabled; element.addEventListener("click", handler); return element;
+    if (symbol) element.prepend(window.PulsoUI.icon(symbol)); element.disabled = disabled; element.addEventListener("click", handler); return element;
   }
   function render() {
-    const nextState = JSON.stringify([window.pulsoCanManage, apps.map(app => ({id:app.id,config:app.config,phase:app.phase,state:app.state,ports:app.ports,error:app.error,container:app.container_id}))]);
+    const nextState = JSON.stringify([window.pulsoCanManage, statusFilter, page("search").value, apps.map(app => ({id:app.id,config:app.config,phase:app.phase,state:app.state,ports:app.ports,error:app.error,container:app.container_id}))]);
     if (nextState === renderedState) return;
     renderedState = nextState;
     const focused = document.activeElement?.dataset.focusKey;
@@ -52,48 +52,67 @@
     page("total").textContent = apps.length;
     page("total").nextElementSibling.textContent = apps.length === 1 ? "projeto" : "projetos";
     page("running").textContent = apps.filter(app => app.state === "running").length;
-    if (!apps.length) {
+    const query = page("search").value.trim().toLocaleLowerCase("pt-BR");
+    const shown = apps.filter(app => {
+      const failed = app.phase === "failed" || app.state === "unhealthy" || app.state === "restarting";
+      const matches = statusFilter === "all" || (statusFilter === "failed" ? failed : app.state === statusFilter);
+      return matches && [app.config.name, app.config.image, app.config.source?.path, app.config.source?.kind].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(query);
+    });
+    if (!shown.length) {
       const empty = document.createElement("div"); empty.className = "container-empty";
-      const heading = document.createElement("h3"); heading.textContent = "Seu próximo projeto começa aqui.";
-      const text = document.createElement("p"); text.textContent = "Use uma imagem Docker ou selecione a pasta de um projeto Node.js, Python ou Dockerfile.";
-      empty.append(heading, text); page("list").append(empty);
+      const heading = document.createElement("h3"); heading.textContent = apps.length ? "Nenhum projeto encontrado" : "Seu primeiro projeto começa aqui";
+      const text = document.createElement("p"); text.textContent = apps.length ? "Tente outro nome ou altere o filtro de status." : "Selecione uma pasta de código ou uma imagem Docker. O Pulso prepara o ambiente para a aplicação.";
+      empty.append(PulsoUI.icon(apps.length ? "search" : "folder"), heading, text);
+      if (!apps.length && window.pulsoCanManage && !$("new").disabled) { const create = button("Novo projeto", () => open(), false, "plus"); create.classList.add("btn-primary"); empty.append(create); }
+      page("list").append(empty);
     }
-    for (const app of apps) {
-      const row = document.createElement("article"); row.className = "container-row";
-      const description = document.createElement("div"); description.className = "container-description";
-      const title = document.createElement("h3"); title.textContent = app.config.name;
-      const source = document.createElement("p"); source.textContent = app.config.source ? ({node:"Node.js",python:"Python",dockerfile:"Dockerfile"}[app.config.source.kind] || app.config.source.kind) + (app.config.source.kind === "dockerfile" ? "" : " " + app.config.source.version) + (app.config.source.path ? " · " + app.config.source.path : "") : app.config.image;
-      const state = document.createElement("span"); state.className = "container-state " + (app.phase === "failed" ? "failed" : app.state);
-      const states = { running: "Em execução", restarting: "Reiniciando após falha", stopped: "Parado", not_created: "Aguardando implantação", starting: "Iniciando", unhealthy: "Healthcheck com falha", unavailable: "Contêiner indisponível" };
-      state.textContent = app.phase === "deploying" ? "Implantando…" : app.phase === "failed" ? "Implantação com falha" : states[app.state] || app.state;
-      const resource = document.createElement("p"); resource.textContent = app.config.memory_mb + " MiB · " + app.config.cpus + " CPU";
-      description.append(title, source, state, resource);
-      if (app.error) { const message = document.createElement("p"); message.className = "container-failure"; message.textContent = app.error; description.append(message); }
+    for (const app of shown) {
+      const row = document.createElement("article"); row.className = "container-row" + (app.phase === "failed" ? " is-failed" : "");
+      const header = document.createElement("div"); header.className = "container-card-header";
+      const mark = document.createElement("span"); mark.className = "project-symbol"; mark.append(PulsoUI.icon(app.config.source ? "terminal" : "package"));
+      const heading = document.createElement("div"); heading.className = "container-heading";
+      const title = document.createElement("h3"); title.textContent = app.config.name; title.title = app.config.name;
+      const type = document.createElement("span"); type.className = "container-source-type";
+      type.textContent = app.config.source ? ({node:"Node.js",python:"Python",dockerfile:"Dockerfile"}[app.config.source.kind] || app.config.source.kind) + (app.config.source.kind === "dockerfile" ? "" : " " + app.config.source.version) : "Imagem Docker";
+      heading.append(title, type); header.append(mark, heading); row.append(header);
+      const source = document.createElement("p"); source.className = "container-source"; source.textContent = app.config.source?.path || app.config.image; source.title = source.textContent;
+      const resources = document.createElement("div"); resources.className = "container-resources";
+      for (const [symbol, value] of [["server", app.config.memory_mb + " MiB"], ["grid", app.config.cpus + " CPU"]]) { const part = document.createElement("span"); part.append(PulsoUI.icon(symbol), document.createTextNode(value)); resources.append(part); }
+      row.append(source, resources);
+      if (app.error) { const message = document.createElement("p"); message.className = "container-failure"; message.textContent = app.error; message.title = app.error; row.append(message); }
       const links = document.createElement("div"); links.className = "container-links";
-      for (const port of [...new Set(app.ports || [])]) { const link = document.createElement("a"); link.href = "http://" + location.hostname + ":" + port; link.textContent = "Abrir porta " + port; link.target = "_blank"; link.rel = "noopener noreferrer"; links.append(link); }
-      description.append(links); row.append(description);
+      for (const port of [...new Set(app.ports || [])]) { const link = document.createElement("a"); const host = location.hostname.includes(":") && !location.hostname.startsWith("[") ? "[" + location.hostname + "]" : location.hostname; link.href = "http://" + host + ":" + port; link.append(document.createTextNode("Porta " + port), PulsoUI.icon("external")); link.target = "_blank"; link.rel = "noopener noreferrer"; link.setAttribute("aria-label", "Abrir " + app.config.name + " na porta " + port); links.append(link); }
+      row.append(links);
+      const footer = document.createElement("div"); footer.className = "container-card-footer";
+      const state = document.createElement("span"); state.className = "container-state " + (app.phase === "deploying" ? "deploying" : app.phase === "failed" ? "failed" : app.state);
+      const states = { running: "Em execução", restarting: "Reiniciando", stopped: "Parado", not_created: "Aguardando", starting: "Iniciando", unhealthy: "Sem resposta", unavailable: "Indisponível" };
+      state.textContent = app.phase === "deploying" ? "Implantando…" : app.phase === "failed" ? "Falha na implantação" : states[app.state] || app.state;
+      footer.append(state); row.append(footer);
       if (window.pulsoCanManage) {
-        const actions = document.createElement("div"); actions.className = "container-actions";
+        const menu = document.createElement("details"); menu.className = "container-menu";
+        const trigger = document.createElement("summary"); trigger.className = "btn btn-icon btn-ghost"; trigger.setAttribute("aria-label", "Ações de " + app.config.name); trigger.append(PulsoUI.icon("more"));
+        const actions = document.createElement("div"); actions.className = "project-menu-items";
         const busy = app.phase === "deploying";
-        const edit = button("Editar", () => open(app), busy); edit.dataset.appEdit = app.id;
-        actions.append(edit, button("Logs", () => showLogs(app.id, app.config.name)));
-        const lifecycle = app.state === "stopped" ? [["start", "Iniciar"]] : [["stop", "Parar"], ["restart", "Reiniciar"]];
-        for (const [action, label] of app.container_id ? lifecycle : []) {
-          const item = button(label, () => actionOn(app, action), busy || !app.container_id); item.setAttribute("aria-label", label + " " + app.config.name); actions.append(item);
+        const edit = button("Editar projeto", () => { menu.open = false; open(app); }, busy, "edit"); edit.dataset.appEdit = app.id; edit.dataset.focusKey = app.id + ":edit";
+        actions.append(edit);
+        const logs = button("Logs", () => showLogs(app.id, app.config.name), false, "logs"); logs.dataset.focusKey = app.id + ":logs"; footer.append(logs);
+        const lifecycle = app.state === "stopped" ? [["start", "Iniciar", "play"]] : [["stop", "Parar", "stop"], ["restart", "Reiniciar", "refresh"]];
+        for (const [action, label, symbol] of app.container_id ? lifecycle : []) {
+          const item = button(label, () => { menu.open = false; actionOn(app, action); }, busy, symbol); item.setAttribute("aria-label", label + " " + app.config.name); actions.append(item);
         }
-        actions.append(button("Excluir", () => actionOn(app, "delete"), busy));
-        for (const item of actions.querySelectorAll("button")) item.dataset.focusKey = app.id + ":" + item.textContent;
-        row.append(actions);
+        const remove = button("Excluir projeto", () => { menu.open = false; actionOn(app, "delete"); }, busy, "trash"); remove.classList.add("btn-danger"); actions.append(remove);
+        trigger.dataset.focusKey = app.id + ":menu";
+        menu.append(trigger, actions); header.append(menu);
       }
       page("list").append(row);
     }
-    if (focused) [...page("list").querySelectorAll("button")].find(item => item.dataset.focusKey === focused)?.focus({ preventScroll: true });
+    if (focused) [...page("list").querySelectorAll("[data-focus-key]")].find(item => item.dataset.focusKey === focused)?.focus({ preventScroll: true });
   }
   async function refresh() {
     if (polling) return; polling = true;
     try {
       const data = await request(""); apps = data.applications || [];
-      page("status").textContent = data.enabled ? "Estado atualizado automaticamente. Cada projeto executa em seu próprio contêiner." : data.reason;
+      page("status").textContent = data.enabled ? "Cada aplicação tem seu próprio contêiner. Atualização automática a cada 5 segundos." : data.reason;
       $("new").disabled = !data.enabled; error(page("error"), ""); render();
       if (logID) { const data = await request("/" + logID + "/logs"); page("logs").textContent = data.logs || "Nenhum log disponível."; }
     } catch (err) { error(page("error"), err.message); }
@@ -169,9 +188,17 @@
   function close() { if (!saving && !loadingEnv && (!dirty || confirm("Descartar as alterações que ainda não foram implantadas?"))) dialog.close(); }
   $("close").addEventListener("click", close); $("cancel").addEventListener("click", close);
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
-  dialog.addEventListener("close", () => { const target = editing ? [...page("list").querySelectorAll("button")].find(item => item.dataset.appEdit === editing.id) : $("new"); target?.focus({preventScroll:true}); });
+  dialog.addEventListener("close", () => { const target = editing ? [...page("list").querySelectorAll("[data-focus-key]")].find(item => item.dataset.focusKey === editing.id + ":menu") : $("new"); target?.focus({preventScroll:true}); });
   $("new").addEventListener("click", () => open()); page("refresh").addEventListener("click", refresh);
   document.addEventListener("pulso:access-ready", () => { if (!window.pulsoCanManage) { logID = ""; page("log-panel").hidden = true; } refresh(); });
+  page("search").addEventListener("input", render);
+  document.querySelectorAll("[data-project-status]").forEach(tab => tab.addEventListener("click", () => {
+    statusFilter = tab.dataset.projectStatus;
+    document.querySelectorAll("[data-project-status]").forEach(item => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-pressed", String(active)); });
+    render();
+  }));
+  document.addEventListener("click", event => { document.querySelectorAll(".container-menu[open]").forEach(menu => { if (!menu.contains(event.target)) menu.open = false; }); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") document.querySelectorAll(".container-menu[open]").forEach(menu => { menu.open = false; menu.querySelector("summary")?.focus(); }); });
   setInterval(() => { if (!document.hidden) refresh(); }, 5000);
   refresh();
 })();

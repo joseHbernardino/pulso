@@ -107,8 +107,8 @@ func TestIntegration_LoginFlow(t *testing.T) {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)
-		if !strings.Contains(string(body), "Entre para acompanhar") {
-			t.Error("login page should contain 'Entre para acompanhar'")
+		if !strings.Contains(string(body), `id="login-form"`) {
+			t.Error("login page should contain the login form")
 		}
 	})
 

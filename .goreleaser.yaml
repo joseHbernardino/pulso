@@ -88,3 +88,9 @@ nfpms:
         dst: /usr/share/doc/pulso/licenses/moby-patternmatcher.LICENSE
       - src: ./licenses/moby-patternmatcher.NOTICE
         dst: /usr/share/doc/pulso/licenses/moby-patternmatcher.NOTICE
+      - src: ./licenses/dokploy.LICENSE
+        dst: /usr/share/doc/pulso/licenses/dokploy.LICENSE
+      - src: ./licenses/dokploy.NOTICE
+        dst: /usr/share/doc/pulso/licenses/dokploy.NOTICE
+      - src: ./licenses/docker-cli.LICENSE
+        dst: /usr/share/doc/pulso/licenses/Apache-2.0.txt
