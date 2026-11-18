@@ -53,6 +53,10 @@ IMAGE_REPO_SET=0
 IMAGE_TAG_SET=0
 INSTALL_DOCKER=yes
 OPEN_FIREWALL=no
+HOST_SOURCE=""
+HOST_SOURCE_SET=0
+HOST_PRIVILEGED=no
+HOST_PRIVILEGED_SET=0
 DRY_RUN="${PULSO_DRY_RUN:-0}"
 ASSUME_YES="${PULSO_ASSUME_YES:-0}"
 
@@ -72,9 +76,12 @@ die()  { printf '%berro:%b %s\n' "$C_ERR" "$C_OFF" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # run executa um comando, ou apenas o descreve quando DRY_RUN=1.
+# O aviso do modo simulado vai para a saída de erro de propósito: várias
+# chamadas redirecionam a saída padrão para /dev/null, e isso engolia justamente
+# a criação dos contêineres — o que a simulação mais precisa mostrar.
 run() {
     if [ "$DRY_RUN" = "1" ]; then
-        printf '%b[dry-run]%b %s\n' "$C_DIM" "$C_OFF" "$*"
+        printf '%b[dry-run]%b %s\n' "$C_DIM" "$C_OFF" "$*" >&2
         return 0
     fi
     "$@"
@@ -83,7 +90,7 @@ run() {
 # run_sh executa uma linha de shell (para pipes e redirecionamentos).
 run_sh() {
     if [ "$DRY_RUN" = "1" ]; then
-        printf '%b[dry-run]%b sh -c %s\n' "$C_DIM" "$C_OFF" "$1"
+        printf '%b[dry-run]%b sh -c %s\n' "$C_DIM" "$C_OFF" "$1" >&2
         return 0
     fi
     sh -c "$1"
@@ -109,6 +116,13 @@ Opções:
   --no-docker-install Não instala o Docker; falha se estiver ausente
   --open-firewall     Libera a porta no firewalld/ufw quando ativo
   --apps-dir <path>   Pasta de projetos no host (padrão /var/lib/pulso/applications)
+  --host-root <path>  Expõe uma pasta do servidor dentro do painel, somente
+                      leitura, para implantar projetos que vivem fora da pasta
+                      de projetos. Use / para o servidor inteiro.
+  --host-root-privileged
+                      Sobe o painel como root com DAC_OVERRIDE, para ler árvores
+                      sem permissão de leitura a outros. Só em servidor de
+                      confiança.
   --project <nome>    Nome do projeto/instância (padrão pulso)
   --yes               Não faz perguntas
   --status            Mostra o estado da instalação e sai
@@ -129,6 +143,8 @@ while [ $# -gt 0 ]; do
         --bind|--ip) [ $# -ge 2 ] || die "$1 exige um valor"; BIND="$2"; BIND_SET=1; shift 2 ;;
         --image) [ $# -ge 2 ] || die "--image exige um valor"; IMAGE_REPO="$2"; IMAGE_REPO_SET=1; shift 2 ;;
         --tag) [ $# -ge 2 ] || die "--tag exige um valor"; IMAGE_TAG="$2"; IMAGE_TAG_SET=1; shift 2 ;;
+        --host-root) [ $# -ge 2 ] || die "--host-root exige um valor"; HOST_SOURCE="$2"; HOST_SOURCE_SET=1; shift 2 ;;
+        --host-root-privileged) HOST_PRIVILEGED=yes; HOST_PRIVILEGED_SET=1; shift ;;
         --apps-dir) [ $# -ge 2 ] || die "--apps-dir exige um valor"; APPS_DIR="$2"; APPS_DIR_SET=1; shift 2 ;;
         --project)
             [ $# -ge 2 ] || die "--project exige um valor"
@@ -179,6 +195,8 @@ load_conf() {
     [ "$PORT_SET" = 1 ] || [ -z "${PULSO_PORT:-}" ] || PORT="$PULSO_PORT"
     [ "$BIND_SET" = 1 ] || [ -z "${PULSO_BIND:-}" ] || BIND="$PULSO_BIND"
     [ "$APPS_DIR_SET" = 1 ] || [ -z "${PULSO_APPS_DIR:-}" ] || APPS_DIR="$PULSO_APPS_DIR"
+    [ "$HOST_SOURCE_SET" = 1 ] || [ -z "${PULSO_HOST_SOURCE:-}" ] || HOST_SOURCE="$PULSO_HOST_SOURCE"
+    [ "$HOST_PRIVILEGED_SET" = 1 ] || [ -z "${PULSO_HOST_PRIVILEGED:-}" ] || HOST_PRIVILEGED="$PULSO_HOST_PRIVILEGED"
     [ "$IMAGE_REPO_SET" = 1 ] || [ -z "${PULSO_IMAGE_REPO:-}" ] || IMAGE_REPO="$PULSO_IMAGE_REPO"
     [ "$IMAGE_TAG_SET" = 1 ] || [ -z "${PULSO_IMAGE_TAG:-}" ] || IMAGE_TAG="$PULSO_IMAGE_TAG"
     step "Configuração anterior carregada de ${CONF_FILE}."
@@ -511,6 +529,27 @@ ensure_buildx() {
     docker buildx version >/dev/null 2>&1 || die "O Buildx continua indisponível. Use --registry ou --local com uma imagem pronta."
 }
 
+# set_build_args preenche os parâmetros posicionais com os --build-arg que
+# identificam a imagem. Sem eles o binário se declara "dev" e o painel não
+# consegue dizer o que está rodando — o que atrapalha o diagnóstico e a
+# comparação de versões na atualização. RELEASE_REPOSITORY fica de fora de
+# propósito: é o repositório de onde o Pulso baixaria uma atualização, e essa
+# confiança não se infere; quem injeta é o workflow de release.
+set_build_args() {
+    bversion="local-${SOURCE_REF}"
+    brevision="unknown"
+    if have git && git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then
+        bversion="$(git -C "$1" describe --tags --always --dirty 2>/dev/null || echo "$bversion")"
+        brevision="$(git -C "$1" rev-parse HEAD 2>/dev/null || echo unknown)"
+    fi
+    step "Versão da imagem: ${bversion}"
+    set -- --build-arg "VERSION=${bversion}" \
+        --build-arg "REVISION=${brevision}" \
+        --build-arg "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    BUILD_ARG_1="$1"; BUILD_ARG_2="$2"; BUILD_ARG_3="$3"
+    BUILD_ARG_4="$4"; BUILD_ARG_5="$5"; BUILD_ARG_6="$6"
+}
+
 build_image() {
     IMAGE="${PULSO_PROJECT}:local"
     log "Compilando a imagem a partir do código-fonte."
@@ -522,7 +561,11 @@ build_image() {
     if [ -n "$context" ] && [ -f "$context/Dockerfile" ] &&
         grep -q '^module pulso.local/pulso' "$context/go.mod" 2>/dev/null; then
         step "Usando o checkout local: ${context}"
-        run docker buildx build --load --tag "$IMAGE" "$context"
+        set_build_args "$context"
+        run docker buildx build --load \
+            "$BUILD_ARG_1" "$BUILD_ARG_2" "$BUILD_ARG_3" \
+            "$BUILD_ARG_4" "$BUILD_ARG_5" "$BUILD_ARG_6" \
+            --tag "$IMAGE" "$context"
         return 0
     fi
     # Sem checkout: baixa o tarball do repositório, sem exigir git.
@@ -542,7 +585,11 @@ build_image() {
     fi
     context="$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)"
     [ -n "$context" ] && [ -f "$context/Dockerfile" ] || { rm -rf "$tmp"; die "O código baixado não contém um Dockerfile."; }
-    run docker buildx build --load --tag "$IMAGE" "$context"
+    set_build_args "$context"
+    run docker buildx build --load \
+        "$BUILD_ARG_1" "$BUILD_ARG_2" "$BUILD_ARG_3" \
+        "$BUILD_ARG_4" "$BUILD_ARG_5" "$BUILD_ARG_6" \
+        --tag "$IMAGE" "$context"
     rm -rf "$tmp"
 }
 
@@ -671,12 +718,61 @@ start_agent() {
         -- /usr/local/bin/pulso container-updater serve >/dev/null
 }
 
+# host_target devolve o caminho dentro do contêiner que espelha o caminho do
+# servidor. O painel traduz a raiz do servidor para PULSO_HOST_ROOT (/host) por
+# prefixo, então montar uma subpasta na posição espelhada mantém a tradução
+# correta sem expor o resto do sistema de arquivos.
+host_target() {
+    case "$1" in
+        /) echo "/host" ;;
+        *) echo "/host$1" ;;
+    esac
+}
+
+validate_host_root() {
+    [ -n "$HOST_SOURCE" ] || return 0
+    case "$HOST_SOURCE" in
+        /*) ;;
+        *) die "--host-root exige um caminho absoluto do servidor, começando com /." ;;
+    esac
+    # Remove a barra final para o espelhamento não gerar "//".
+    [ "$HOST_SOURCE" = "/" ] || HOST_SOURCE="${HOST_SOURCE%/}"
+    if [ "$DRY_RUN" != "1" ] && [ ! -d "$HOST_SOURCE" ]; then
+        die "A pasta ${HOST_SOURCE} não existe neste servidor."
+    fi
+    step "Pasta do servidor exposta ao painel: ${HOST_SOURCE} -> $(host_target "$HOST_SOURCE") (somente leitura)."
+}
+
+# check_host_root_readable prova, antes de subir o painel, que o usuário sem
+# privilégios do contêiner consegue ler a pasta. Sem isto o problema só
+# apareceria no painel, como "caminho indisponível" — a mesma mensagem de
+# quando a pasta não foi montada, confundindo duas causas diferentes.
+check_host_root_readable() {
+    [ -n "$HOST_SOURCE" ] || return 0
+    [ "$DRY_RUN" = "1" ] && return 0
+    [ "$HOST_PRIVILEGED" = yes ] && return 0
+    if docker run --rm --user "${APP_UID}:${APP_GID}" --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        -v "${HOST_SOURCE}:/probe:ro" --entrypoint /bin/sh "$IMAGE" \
+        -c 'ls /probe >/dev/null 2>&1' >/dev/null 2>&1; then
+        step "A pasta é legível pelo painel, que segue rodando sem privilégios."
+        return 0
+    fi
+    warn "O painel roda como uid ${APP_UID} e não consegue ler ${HOST_SOURCE}."
+    warn "Dê leitura a outros nessa árvore (chmod o+rX), ou repita com --host-root-privileged,"
+    die "que sobe o painel como root com DAC_OVERRIDE — use apenas em servidor de confiança."
+}
+
 start_panel() {
     log "Subindo o painel (${PANEL_NAME}) em ${BIND}:${PORT}."
     remove_container "$PANEL_NAME"
     # O painel não recebe o socket do Docker. Ele fala com o agente por um
     # socket Unix no volume compartilhado, montado somente para leitura.
-    run docker run -d \
+    #
+    # Os argumentos vão em `set --` porque o acesso ao servidor é condicional.
+    # Em sh, uma função tem seus próprios parâmetros posicionais, então isto não
+    # afeta o resto do script, e cada caminho continua entre aspas.
+    set -- -d \
         --name "$PANEL_NAME" \
         --label "com.docker.compose.project=${PULSO_PROJECT}" \
         --label "com.docker.compose.service=${PANEL_SERVICE}" \
@@ -694,8 +790,23 @@ start_panel() {
         -e PULSO_APPLICATIONS_ENABLED=1 \
         -v "${DATA_VOLUME}:/var/lib/pulso" \
         -v "${UPDATE_VOLUME}:/var/run/pulso-update:ro" \
-        -v "${APPS_DIR}:/apps${MOUNT_SUFFIX}" \
-        "$IMAGE" >/dev/null
+        -v "${APPS_DIR}:/apps${MOUNT_SUFFIX}"
+    if [ -n "$HOST_SOURCE" ]; then
+        # Somente leitura: o painel apenas lê o código para empacotá-lo. E
+        # nunca com :Z — relabelar uma árvore do servidor, ou a raiz, altera
+        # arquivos que não são nossos. Com SELinux ativo, desabilitar o rótulo
+        # para este contêiner é o caminho seguro.
+        set -- "$@" -e PULSO_HOST_ROOT=/host \
+            -v "${HOST_SOURCE}:$(host_target "$HOST_SOURCE"):ro"
+        if [ "$SELINUX_ON" = yes ]; then
+            set -- "$@" --security-opt label:disable
+        fi
+        if [ "$HOST_PRIVILEGED" = yes ]; then
+            warn "O painel subirá como root com DAC_OVERRIDE, para ler ${HOST_SOURCE}."
+            set -- "$@" --user 0:0 --cap-add DAC_OVERRIDE
+        fi
+    fi
+    run docker run "$@" "$IMAGE" >/dev/null
 }
 
 wait_healthy() {
@@ -750,6 +861,8 @@ PULSO_IMAGE='${IMAGE}'
 PULSO_PORT='${PORT}'
 PULSO_BIND='${BIND}'
 PULSO_APPS_DIR='${APPS_DIR}'
+PULSO_HOST_SOURCE='${HOST_SOURCE}'
+PULSO_HOST_PRIVILEGED='${HOST_PRIVILEGED}'
 PULSO_DOCKER_SOCKET='${DOCKER_SOCKET}'
 PULSO_SELINUX='${SELINUX_ON}'
 PULSO_INSTALLED_AT='$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
@@ -876,6 +989,8 @@ do_install() {
     detect_selinux
     check_cgroups
     ensure_image
+    validate_host_root
+    check_host_root_readable
     ensure_storage
     start_agent
     if ! wait_healthy "$AGENT_NAME"; then

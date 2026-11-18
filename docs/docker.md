@@ -110,6 +110,34 @@ sempre em letras minúsculas. O workflow usa automaticamente o nome do repositó
 
 ## Projetos espalhados pelo servidor: modo host
 
+O painel só vê o que está montado nele. Um projeto em
+`/ctmagent/develop/Servicos/minha-api`, por exemplo, aparece como
+*"Este caminho não está disponível dentro do contêiner"* até que a pasta do
+servidor seja exposta.
+
+### Pelo instalador, sem Compose (recomendado)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --host-root /ctmagent
+```
+
+A pasta é montada **somente leitura**, na posição espelhada dentro do painel
+(`/ctmagent` vira `/host/ctmagent`), e `PULSO_HOST_ROOT=/host` passa a traduzir
+os caminhos. Como a tradução é por prefixo, expor apenas a subárvore necessária
+funciona igual a expor `/` — e é o padrão recomendado.
+
+Diferente do override de Compose abaixo, aqui o painel **continua sem
+privilégios**, com `--read-only` e `cap_drop ALL`. Antes de subir, o instalador
+prova que o usuário do contêiner (uid 10001) consegue ler a pasta; se não
+consegue, recusa e aponta as duas saídas: dar leitura a outros nessa árvore
+(`chmod o+rX`) ou `--host-root-privileged`, que sobe o painel como root com
+`DAC_OVERRIDE` — apenas em servidor de confiança.
+
+A escolha fica gravada em `/etc/pulso/<projeto>.conf`, então reexecutar o
+instalador a preserva. Para `/` inteiro: `--host-root /`.
+
+### Pelo override de Compose
+
 Para acessar diretórios sem uma raiz de projetos comum, use o override
 `compose.host.yaml`. Ele disponibiliza `/` do servidor Docker em `/host`,
 mantendo `/apps` e o volume de dados existentes. Não é necessário cadastrar
