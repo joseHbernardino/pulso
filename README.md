@@ -31,10 +31,37 @@ Pulso manages your applications — Go, Python, Node.js/TypeScript, Bun, Deno, R
 - **System service** — systemd and launchd integration for boot-time startup
 - **Lifecycle hooks** — run commands before/after start, stop, restart, and reload
 - **Resource metrics** — per-process CPU, memory, thread, and FD tracking
+- **Container metrics** — per-application CPU, memory, network and block I/O, with page cache discounted
+- **Audit log** — append-only record of who changed what, including refused attempts
+- **Notifications** — outbound alerts to Slack, Discord, Telegram, Gotify, ntfy, a webhook or e-mail
+- **Docker inventory** — manage every container, image, volume and network on the Engine, with the panel's own infrastructure protected
+- **Disk cleanup** — truthful dry run that lists exactly what would be freed, never removing tagged images or protected resources
 
 ## Install
 
-Build from this source tree with Go 1.26.11 or newer:
+Pulso runs as a container and deploys each application as its own container.
+One command, on any Linux distribution:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sh
+```
+
+The installer detects the distribution, installs Docker Engine when missing,
+handles SELinux and cgroups, and brings up the panel and its privileged agent.
+It needs no repository checkout, no Go, Node.js or Python, and no Docker
+Compose. Validated on Debian, Ubuntu, RHEL, Rocky, AlmaLinux, Fedora, Amazon
+Linux 2 and 2023, openSUSE, Arch and Alpine — see the
+[installation guide](docs/install.md) for options, closed networks and upgrades.
+
+```bash
+sh get-pulso.sh --port 8080 --bind 127.0.0.1   # internal only, custom port
+sh get-pulso.sh --local                        # air-gapped, image already loaded
+sh get-pulso.sh --status                       # installation state
+```
+
+### Build from source
+
+To work on Pulso itself, build this source tree with Go 1.26.11 or newer:
 
 ```bash
 make build
@@ -304,6 +331,9 @@ MCP resources: `apps://list`, `apps://{name}`, `logs://{name}`, `metrics://{name
 
 Full documentation is available in the [`docs/`](docs/) directory:
 
+- [Installation](docs/install.md) — one-line installer, distributions, closed networks
+- [Observability](docs/observability.md) — container metrics, audit log, notifications
+- [Docker inventory](docs/docker-inventory.md) — manage every Engine resource, ownership rules, disk cleanup
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, and examples
 - [Configuration](docs/configuration.md) — YAML schema, fields, and validation
 - [Architecture](docs/architecture.md) — system design and module breakdown

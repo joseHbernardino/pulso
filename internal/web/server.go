@@ -15,8 +15,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 
+	"pulso.local/pulso/internal/audit"
 	"pulso.local/pulso/internal/auth"
 	"pulso.local/pulso/internal/containerupdate"
+	"pulso.local/pulso/internal/notify"
 	"pulso.local/pulso/internal/supervisor"
 	"pulso.local/pulso/pkg/types"
 )
@@ -34,6 +36,9 @@ type Server struct {
 	auth            auth.Authenticator
 	sessions        *auth.SessionStore
 	users           *auth.UserStore
+	audit           *audit.Log
+	notifyStore     *notify.Store
+	notifier        *notify.Dispatcher
 	hub             *WSHub
 
 	loginMu       sync.Mutex
@@ -51,6 +56,20 @@ func NewServerWithUsers(sup *supervisor.Supervisor, listen string, users *auth.U
 	s.sessions = auth.NewPersistentSessionStore(users, auth.DefaultSessionTTL)
 	return s
 }
+
+// requireAdmin rejects anything but an authenticated administrator and
+// reports whether the caller may proceed.
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request, message string) bool {
+	if session := requestSession(r); s.users == nil || session == nil || session.Role != auth.RoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": message})
+		return false
+	}
+	return true
+}
+
+// SetAuditLog enables the audit record. The caller keeps ownership of the
+// log and is responsible for closing it.
+func (s *Server) SetAuditLog(log *audit.Log) { s.audit = log }
 
 func (s *Server) authMode() string {
 	if s.users != nil {
@@ -118,6 +137,11 @@ func (s *Server) handler() (http.Handler, error) {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	// A auditoria envolve a autenticação e a autorização, para que também as
+	// requisições recusadas por sessão ausente (401) ou por papel (403)
+	// fiquem registradas. Ela resolve a sessão por conta própria, sem depender
+	// da ordem dos middlewares seguintes.
+	r.Use(s.auditMiddleware)
 	if s.authMode() != "disabled" {
 		r.Use(WebAuthMiddleware(s.sessions))
 	}
@@ -155,6 +179,31 @@ func (s *Server) handler() (http.Handler, error) {
 		r.Put("/container-applications/{id}", s.handleDeployContainer)
 		r.Post("/container-applications/{id}/{action}", s.handleContainerAction)
 		r.Get("/container-applications/{id}/logs", s.handleContainerLogs)
+		r.Get("/container-applications/{id}/stats", s.handleContainerStats)
+		// Caminho próprio para a tabela do painel: uma chamada cobre todas as
+		// aplicações, sem competir com /container-applications/{id}.
+		r.Get("/container-stats", s.handleAllContainerStats)
+		r.Get("/audit", s.handleAuditLog)
+		r.Get("/notifications/channels", s.handleListNotificationChannels)
+		r.Post("/notifications/channels", s.handleSaveNotificationChannel)
+		r.Put("/notifications/channels/{id}", s.handleSaveNotificationChannel)
+		r.Delete("/notifications/channels/{id}", s.handleDeleteNotificationChannel)
+		r.Post("/notifications/channels/{id}/test", s.handleTestNotificationChannel)
+		// Inventário do Docker: contêineres, imagens, volumes e redes que o
+		// Pulso não criou. Leitura liberada ao papel de visualização;
+		// alterações e logs restritos ao administrador.
+		r.Get("/docker/containers", s.handleDockerContainers)
+		r.Get("/docker/containers/{id}", s.handleDockerContainer)
+		r.Get("/docker/containers/{id}/logs", s.handleDockerContainerLogs)
+		r.Post("/docker/containers/{id}/{action}", s.handleDockerContainerAction)
+		r.Get("/docker/images", s.handleDockerImages)
+		r.Delete("/docker/images/{id}", s.handleDockerRemoveImage)
+		r.Get("/docker/volumes", s.handleDockerVolumes)
+		r.Delete("/docker/volumes/{name}", s.handleDockerRemoveVolume)
+		r.Get("/docker/networks", s.handleDockerNetworks)
+		r.Delete("/docker/networks/{id}", s.handleDockerRemoveNetwork)
+		r.Get("/docker/disk", s.handleDockerDisk)
+		r.Post("/docker/prune", s.handleDockerPrune)
 		r.Get("/system/metrics", s.handleSystemMetrics)
 		r.Get("/system/version", s.handleVersion)
 		r.Get("/system/updates", s.handleUpdateStatus)

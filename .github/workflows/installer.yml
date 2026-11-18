@@ -1,0 +1,135 @@
+name: Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/get-pulso.sh"
+      - "scripts/test-installer-distros.sh"
+      - ".github/workflows/installer.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/get-pulso.sh"
+      - "scripts/test-installer-distros.sh"
+      - ".github/workflows/installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Shell lint e sintaxe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: ShellCheck
+        run: |
+          docker run --rm -v "$PWD/scripts:/mnt:ro" \
+            koalaman/shellcheck:stable --shell=sh --severity=style /mnt/get-pulso.sh
+          docker run --rm -v "$PWD/scripts:/mnt:ro" \
+            koalaman/shellcheck:stable --severity=warning /mnt/test-installer-distros.sh
+
+      # O instalador roda via `curl | sh`: precisa ser POSIX, não só bash.
+      - name: Sintaxe em dash, bash e busybox ash
+        run: |
+          docker run --rm -v "$PWD/scripts:/s:ro" debian:trixie-slim \
+            sh -c 'dash -n /s/get-pulso.sh && bash -n /s/get-pulso.sh'
+          docker run --rm -v "$PWD/scripts:/s:ro" alpine:3 sh -n /s/get-pulso.sh
+
+  distros:
+    name: Detecção de distribuição (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:trixie-slim
+          - ubuntu:24.04
+          - rockylinux:9
+          - almalinux:9
+          - fedora:41
+          - amazonlinux:2023
+          - amazonlinux:2
+          - opensuse/leap:15
+          - archlinux:latest
+          - alpine:3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dry-run do instalador em ${{ matrix.image }}
+        run: bash scripts/test-installer-distros.sh "${{ matrix.image }}"
+
+  end-to-end:
+    name: Instalação real (Ubuntu runner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compilar a imagem deste checkout
+        run: docker buildx build --load --tag pulso:ci .
+
+      # Projeto e porta próprios para não colidir com nada no runner.
+      - name: Instalar com a imagem local
+        env:
+          PULSO_CONF_DIR: ${{ runner.temp }}/pulso-etc
+        run: |
+          sudo mkdir -p "$PULSO_CONF_DIR"
+          sudo -E sh scripts/get-pulso.sh \
+            --project pulsoci --port 5099 --bind 127.0.0.1 \
+            --image pulso --tag ci --local \
+            --apps-dir "${{ runner.temp }}/pulsoci-apps" --yes
+
+      - name: Painel responde e encontrou o agente
+        run: |
+          set -eu
+          code="$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:5099/api/auth/status)"
+          [ "$code" = "200" ] || { echo "painel respondeu $code"; exit 1; }
+
+          token="$(sudo docker exec pulsoci-panel cat /var/lib/pulso/security/setup-token)"
+          curl -fsS -c /tmp/ci.cookies -X POST http://127.0.0.1:5099/api/auth/setup \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"${token}\",\"username\":\"admin\",\"password\":\"SenhaDeTesteCI123!\"}" >/dev/null
+
+          # enabled:true prova que o painel alcançou o agente pelo socket Unix
+          # e que o agente se identificou pelos rótulos aplicados pelo instalador.
+          apps="$(curl -fsS -b /tmp/ci.cookies http://127.0.0.1:5099/api/v1/container-applications)"
+          echo "$apps"
+          echo "$apps" | grep -q '"enabled":true' || { echo "o painel não alcançou o agente"; exit 1; }
+
+      - name: Implantar uma aplicação de verdade
+        run: |
+          set -eu
+          curl -fsS -b /tmp/ci.cookies -X POST http://127.0.0.1:5099/api/v1/container-applications \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"ci-nginx","image":"nginx:alpine","port":80,"host_port":5098,"memory_mb":128,"cpus":0.5,"pull":true}' >/dev/null
+
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:5098/; then
+              echo "aplicação implantada e servindo"
+              exit 0
+            fi
+            sleep 4
+          done
+          sudo docker logs pulsoci-updater 2>&1 | tail -40
+          echo "a aplicação não respondeu" >&2
+          exit 1
+
+      - name: Reinstalar preserva a aplicação e as contas
+        env:
+          PULSO_CONF_DIR: ${{ runner.temp }}/pulso-etc
+        run: |
+          set -eu
+          sudo -E sh scripts/get-pulso.sh --project pulsoci --local --yes
+          curl -fsS -o /dev/null http://127.0.0.1:5098/ || { echo "a aplicação não sobreviveu"; exit 1; }
+          curl -fsS -X POST http://127.0.0.1:5099/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"SenhaDeTesteCI123!"}' | grep -q '"success":true'
+
+      - name: Desinstalar
+        if: always()
+        env:
+          PULSO_CONF_DIR: ${{ runner.temp }}/pulso-etc
+        run: sudo -E sh scripts/get-pulso.sh --project pulsoci --purge --yes || true

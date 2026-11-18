@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"pulso.local/pulso/internal/audit"
 	"pulso.local/pulso/internal/auth"
 	"pulso.local/pulso/internal/containerupdate"
 	"pulso.local/pulso/internal/envfile"
@@ -114,6 +115,13 @@ func (s *Server) handleDeployContainer(w http.ResponseWriter, r *http.Request) {
 		s.settingsError(w, err)
 		return
 	}
+	// A auditoria recebe o nome, a imagem e apenas as CHAVES das variáveis.
+	// Valores de ambiente podem conter credenciais e nunca são registrados.
+	detail := "imagem " + req.Image
+	if keys := audit.EnvKeys(req.Env); keys != "" {
+		detail += "; variáveis: " + keys
+	}
+	auditRecord(r, req.Name, detail)
 	id := chi.URLParam(r, "id")
 	var previous *containerupdate.ApplicationConfig
 	for i := range current {
@@ -158,6 +166,13 @@ func (s *Server) handleDeployContainer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
 	}
+	// A implantação é assíncrona: o agente produz o resultado. O painel
+	// acompanha até a conclusão para notificar sucesso ou falha.
+	actor := ""
+	if session := requestSession(r); session != nil {
+		actor = session.Username
+	}
+	s.watchDeployment(app.ID, req.Name, actor)
 	writeJSON(w, 202, app)
 }
 func (s *Server) handleContainerAction(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +196,50 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]string{"logs": logs})
 }
+
+// containerReader authorizes read-only container access. Métricas não revelam
+// variáveis nem configuração, então o papel de visualização também as recebe;
+// escrever continua restrito a containerAdmin.
+func (s *Server) containerReader(w http.ResponseWriter, r *http.Request) bool {
+	if session := requestSession(r); s.users == nil || session == nil {
+		writeJSON(w, 403, map[string]string{"error": "Entre para ver os projetos Docker."})
+		return false
+	}
+	if s.updateClient == nil {
+		writeJSON(w, 409, map[string]string{"error": "Ative os projetos Docker com bash scripts/pulso-docker.sh start."})
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleContainerStats(w http.ResponseWriter, r *http.Request) {
+	if !s.containerReader(w, r) {
+		return
+	}
+	stats, err := s.updateClient.ApplicationStats(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, stats)
+}
+
+func (s *Server) handleAllContainerStats(w http.ResponseWriter, r *http.Request) {
+	if s.updateClient == nil {
+		writeJSON(w, 200, map[string]any{"enabled": false, "stats": []any{}})
+		return
+	}
+	if !s.containerReader(w, r) {
+		return
+	}
+	stats, err := s.updateClient.AllApplicationStats(r.Context())
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"enabled": true, "stats": stats})
+}
+
 func (s *Server) handleContainerSettings(w http.ResponseWriter, r *http.Request) {
 	if !s.containerAdmin(w, r) {
 		return

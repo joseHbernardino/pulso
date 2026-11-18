@@ -139,6 +139,9 @@ func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, loginResponse{Error: "invalid request body"})
 		return
 	}
+	// Registra qual conta foi tentada, para que uma sequência de falhas fique
+	// visível na auditoria. A senha nunca é registrada.
+	auditRecord(r, req.Username, "")
 
 	// Validate credentials using the authenticator.
 	// Create a synthetic HTTP request with basic auth to reuse existing auth logic.

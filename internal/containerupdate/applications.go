@@ -620,7 +620,14 @@ func (a *Agent) applicationLogs(ctx context.Context, id string) (string, error) 
 	return app.BuildLog + text, err
 }
 func (a *Agent) readApplicationContainerLogs(ctx context.Context, id string) (string, error) {
-	response, err := a.engine.call(ctx, "GET", "/containers/"+url.PathEscape(id)+"/logs?stdout=true&stderr=true&tail=100&timestamps=true", nil)
+	return a.readContainerLogTail(ctx, id, 100)
+}
+
+// readContainerLogTail reads the last lines of any container's logs and
+// decodes the multiplexed stream framing used for non-TTY containers.
+func (a *Agent) readContainerLogTail(ctx context.Context, id string, tail int) (string, error) {
+	query := fmt.Sprintf("?stdout=true&stderr=true&tail=%d&timestamps=true", tail)
+	response, err := a.engine.call(ctx, "GET", "/containers/"+url.PathEscape(id)+"/logs"+query, nil)
 	if err != nil {
 		return "", err
 	}
@@ -739,5 +746,136 @@ func (a *Agent) registerApplications(mux *http.ServeMux) error {
 		}
 		respond(w, 200, map[string]string{"logs": text})
 	})
+	mux.HandleFunc("GET /applications/{id}/stats", func(w http.ResponseWriter, r *http.Request) {
+		stats, err := a.applicationStats(r.Context(), r.PathValue("id"))
+		if err != nil {
+			respond(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, stats)
+	})
+	// Listagem única para a tabela do painel: uma chamada em vez de uma por
+	// aplicação. O caminho é próprio para não competir com /applications/{id}.
+	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
+		stats, err := a.allApplicationStats(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]any{"stats": stats})
+	})
+	a.registerInventory(mux)
 	return nil
+}
+
+// registerInventory exposes the whole Docker inventory, including the
+// resources Pulso did not create. Every mutation goes through the ownership
+// checks in inventory.go: the panel cannot reach the Engine directly.
+func (a *Agent) registerInventory(mux *http.ServeMux) {
+	mux.HandleFunc("GET /docker/containers", func(w http.ResponseWriter, r *http.Request) {
+		containers, err := a.containerInventory(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]any{"containers": containers})
+	})
+	mux.HandleFunc("GET /docker/containers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		details, err := a.inventoryContainerDetails(r.Context(), r.PathValue("id"))
+		if err != nil {
+			respond(w, 404, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, details)
+	})
+	mux.HandleFunc("GET /docker/containers/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
+		tail := 200
+		if value := r.URL.Query().Get("tail"); value != "" {
+			if parsed, err := strconv.Atoi(value); err == nil {
+				tail = parsed
+			}
+		}
+		text, err := a.inventoryContainerLogs(r.Context(), r.PathValue("id"), tail)
+		if err != nil {
+			respond(w, 404, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]string{"logs": text})
+	})
+	mux.HandleFunc("POST /docker/containers/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.inventoryContainerAction(r.Context(), r.PathValue("id"), r.PathValue("action")); err != nil {
+			respond(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("GET /docker/images", func(w http.ResponseWriter, r *http.Request) {
+		images, err := a.imageInventory(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]any{"images": images})
+	})
+	mux.HandleFunc("DELETE /docker/images/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.removeInventoryImage(r.Context(), r.PathValue("id")); err != nil {
+			respond(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("GET /docker/volumes", func(w http.ResponseWriter, r *http.Request) {
+		volumes, err := a.volumeInventory(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]any{"volumes": volumes})
+	})
+	mux.HandleFunc("DELETE /docker/volumes/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.removeInventoryVolume(r.Context(), r.PathValue("name")); err != nil {
+			respond(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("GET /docker/networks", func(w http.ResponseWriter, r *http.Request) {
+		networks, err := a.networkInventory(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]any{"networks": networks})
+	})
+	mux.HandleFunc("DELETE /docker/networks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.removeInventoryNetwork(r.Context(), r.PathValue("id")); err != nil {
+			respond(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("GET /docker/disk", func(w http.ResponseWriter, r *http.Request) {
+		usage, err := a.DiskUsage(r.Context())
+		if err != nil {
+			respond(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, usage)
+	})
+	mux.HandleFunc("POST /docker/prune", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Resources []string `json:"resources"`
+			DryRun    bool     `json:"dry_run"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request); err != nil {
+			respond(w, 400, map[string]string{"error": "pedido de limpeza inválido"})
+			return
+		}
+		result, err := a.Prune(r.Context(), request.Resources, request.DryRun)
+		if err != nil {
+			respond(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, 200, result)
+	})
 }

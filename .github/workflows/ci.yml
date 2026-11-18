@@ -123,6 +123,23 @@ jobs:
       - name: Verify binary
         run: ./result/bin/pulso version
 
+  docker-integration:
+    name: Integração com o Docker Engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # Estes testes falam com o Engine de verdade: validam o formato das
+      # respostas do Docker, a classificação de propriedade, as proteções da
+      # infraestrutura e a honestidade da simulação de limpeza.
+      - name: Métricas e inventário contra o Docker real
+        run: |
+          go test -tags integration -v -timeout 10m ./internal/containerupdate/             -run 'TestContainerStatsAgainstRealDocker|TestInventoryAgainstRealDocker'
+
   security:
     name: Vulnerability scan
     runs-on: ubuntu-latest

@@ -36,8 +36,10 @@ type container struct {
 		Ports    map[string][]map[string]string
 	}
 	Mounts []struct {
-		Type, Name, Destination string
-		RW                      bool
+		// Source is the host path of a bind mount; it is read for the
+		// inventory view and is not sent back to the Engine.
+		Type, Name, Source, Destination string
+		RW                              bool
 	}
 	State struct {
 		Running    bool

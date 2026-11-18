@@ -104,6 +104,7 @@ func (s *Server) handleSetupAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, loginResponse{Error: "invalid request body"})
 		return
 	}
+	auditRecord(r, req.Username, "criação do primeiro administrador")
 	user, err := s.users.Bootstrap(req.Token, req.Username, req.Password)
 	if err != nil {
 		s.recordFailedLogin(r.RemoteAddr)

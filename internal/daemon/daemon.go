@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"pulso.local/pulso/internal/audit"
 	"pulso.local/pulso/internal/auth"
 	"pulso.local/pulso/internal/mcp"
 	"pulso.local/pulso/internal/metrics"
+	"pulso.local/pulso/internal/notify"
 	"pulso.local/pulso/internal/supervisor"
 	"pulso.local/pulso/pkg/types"
 )
@@ -175,6 +177,37 @@ func RunDaemon(socketPath string, dataDir string, cfg *types.PulsoConfig, config
 		}
 	}()
 	srv.webUsers = users
+
+	// Registro de auditoria em arquivo próprio: um problema no banco de contas
+	// não derruba o registro, e a retenção é independente das contas.
+	auditLog, err := audit.Open(filepath.Join(dataDir, "security", "audit.sqlite"), audit.DefaultRetention)
+	if err != nil {
+		col.Stop()
+		return fmt.Errorf("open audit log: %w", err)
+	}
+	defer func() {
+		if err := auditLog.Close(); err != nil {
+			log.Error().Err(err).Msg("close audit log")
+		}
+	}()
+	if removed, err := auditLog.Prune(time.Now()); err != nil {
+		log.Error().Err(err).Msg("prune audit log")
+	} else if removed > 0 {
+		log.Info().Int64("entries", removed).Msg("audit entries past retention removed")
+	}
+	srv.auditLog = auditLog
+
+	// Notificações de saída: funcionam em rede fechada, pois só fazem
+	// tráfego de saída. A configuração fica em um arquivo 0600.
+	notifyStore, err := notify.OpenStore(filepath.Join(dataDir, "security", "notifications.json"))
+	if err != nil {
+		col.Stop()
+		return fmt.Errorf("open notification channels: %w", err)
+	}
+	notifier := notify.NewDispatcher(notifyStore)
+	defer notifier.Close()
+	srv.notifyStore = notifyStore
+	srv.notifier = notifier
 
 	log.Info().
 		Str("socket", socketPath).

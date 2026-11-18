@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"pulso.local/pulso/internal/audit"
 	"pulso.local/pulso/internal/auth"
 	"pulso.local/pulso/internal/config"
 	"pulso.local/pulso/internal/httputil"
 	"pulso.local/pulso/internal/logutil"
+	"pulso.local/pulso/internal/notify"
 	"pulso.local/pulso/internal/supervisor"
 	"pulso.local/pulso/internal/web"
 	"pulso.local/pulso/pkg/types"
@@ -29,14 +31,17 @@ const maxRequestBody = 1 << 20 // 1 MiB max request body
 
 // Server is the daemon's Unix socket HTTP server.
 type Server struct {
-	supervisor *supervisor.Supervisor
-	config     *types.PulsoConfig
-	listener   net.Listener
-	httpServer *http.Server
-	socketPath string
-	pidFile    *PIDFile
-	auth       auth.Authenticator
-	webUsers   *auth.UserStore
+	supervisor  *supervisor.Supervisor
+	config      *types.PulsoConfig
+	listener    net.Listener
+	httpServer  *http.Server
+	socketPath  string
+	pidFile     *PIDFile
+	auth        auth.Authenticator
+	webUsers    *auth.UserStore
+	auditLog    *audit.Log
+	notifyStore *notify.Store
+	notifier    *notify.Dispatcher
 
 	webMu     sync.Mutex
 	webCancel context.CancelFunc
@@ -869,8 +874,13 @@ func limitedBody(w http.ResponseWriter, r *http.Request) *json.Decoder {
 
 // Web accounts have their own persistent authentication; IPC remains local.
 func (s *Server) newWebServer(listen string) *web.Server {
+	var server *web.Server
 	if s.webUsers != nil {
-		return web.NewServerWithUsers(s.supervisor, listen, s.webUsers)
+		server = web.NewServerWithUsers(s.supervisor, listen, s.webUsers)
+	} else {
+		server = web.NewServerWithAuth(s.supervisor, listen, s.auth)
 	}
-	return web.NewServerWithAuth(s.supervisor, listen, s.auth)
+	server.SetAuditLog(s.auditLog)
+	server.SetNotifications(s.notifyStore, s.notifier)
+	return server
 }
