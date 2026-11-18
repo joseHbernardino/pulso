@@ -40,7 +40,12 @@ jobs:
             REVISION=${{ github.sha }}
             RELEASE_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=pulso-container-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }}
+          # ignore-error porque o cache é otimização, não requisito: num evento
+          # pull_request o token de execução não tem escopo de escrita no cache
+          # do Actions, e sem isto o build inteiro morria com "cache write
+          # denied: token has no writable scopes" — uma falha de gravação de
+          # cache derrubando um build que compilava bem.
+          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }},ignore-error=true
       - name: Test login, dotenv and recovery after container replacement
         run: |
           python3 scripts/docker-smoke.py pulso:smoke
@@ -115,6 +120,6 @@ jobs:
             BUILD_TIME=${{ steps.image.outputs.build_time }}
             RELEASE_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=pulso-container-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=pulso-container-${{ matrix.target }},ignore-error=true
           provenance: mode=max
           sbom: true
