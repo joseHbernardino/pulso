@@ -53,9 +53,11 @@ IMAGE_REPO_SET=0
 IMAGE_TAG_SET=0
 INSTALL_DOCKER=yes
 OPEN_FIREWALL=no
-HOST_SOURCE=""
+# Instalações novas leem o servidor inteiro. load_conf preserva as escolhas
+# anteriores, inclusive a ausência explícita de uma montagem do host.
+HOST_SOURCE="/"
 HOST_SOURCE_SET=0
-HOST_PRIVILEGED=no
+HOST_PRIVILEGED=yes
 HOST_PRIVILEGED_SET=0
 DRY_RUN="${PULSO_DRY_RUN:-0}"
 ASSUME_YES="${PULSO_ASSUME_YES:-0}"
@@ -117,12 +119,13 @@ Opções:
   --open-firewall     Libera a porta no firewalld/ufw quando ativo
   --apps-dir <path>   Pasta de projetos no host (padrão /var/lib/pulso/applications)
   --host-root <path>  Expõe uma pasta do servidor dentro do painel, somente
-                      leitura, para implantar projetos que vivem fora da pasta
-                      de projetos. Use / para o servidor inteiro.
+                      leitura (padrão /, o servidor inteiro).
+  --no-host-root      Desativa a montagem do servidor; usa só a pasta de projetos
   --host-root-privileged
                       Sobe o painel como root com DAC_OVERRIDE, para ler árvores
-                      sem permissão de leitura a outros. Só em servidor de
-                      confiança.
+                      sem permissão de leitura a outros (padrão).
+  --no-host-root-privileged
+                      Executa o painel como uid 10001; exige leitura nessa pasta
   --project <nome>    Nome do projeto/instância (padrão pulso)
   --yes               Não faz perguntas
   --status            Mostra o estado da instalação e sai
@@ -144,7 +147,9 @@ while [ $# -gt 0 ]; do
         --image) [ $# -ge 2 ] || die "--image exige um valor"; IMAGE_REPO="$2"; IMAGE_REPO_SET=1; shift 2 ;;
         --tag) [ $# -ge 2 ] || die "--tag exige um valor"; IMAGE_TAG="$2"; IMAGE_TAG_SET=1; shift 2 ;;
         --host-root) [ $# -ge 2 ] || die "--host-root exige um valor"; HOST_SOURCE="$2"; HOST_SOURCE_SET=1; shift 2 ;;
+        --no-host-root) HOST_SOURCE=""; HOST_SOURCE_SET=1; shift ;;
         --host-root-privileged) HOST_PRIVILEGED=yes; HOST_PRIVILEGED_SET=1; shift ;;
+        --no-host-root-privileged) HOST_PRIVILEGED=no; HOST_PRIVILEGED_SET=1; shift ;;
         --apps-dir) [ $# -ge 2 ] || die "--apps-dir exige um valor"; APPS_DIR="$2"; APPS_DIR_SET=1; shift 2 ;;
         --project)
             [ $# -ge 2 ] || die "--project exige um valor"
@@ -195,8 +200,10 @@ load_conf() {
     [ "$PORT_SET" = 1 ] || [ -z "${PULSO_PORT:-}" ] || PORT="$PULSO_PORT"
     [ "$BIND_SET" = 1 ] || [ -z "${PULSO_BIND:-}" ] || BIND="$PULSO_BIND"
     [ "$APPS_DIR_SET" = 1 ] || [ -z "${PULSO_APPS_DIR:-}" ] || APPS_DIR="$PULSO_APPS_DIR"
-    [ "$HOST_SOURCE_SET" = 1 ] || [ -z "${PULSO_HOST_SOURCE:-}" ] || HOST_SOURCE="$PULSO_HOST_SOURCE"
-    [ "$HOST_PRIVILEGED_SET" = 1 ] || [ -z "${PULSO_HOST_PRIVILEGED:-}" ] || HOST_PRIVILEGED="$PULSO_HOST_PRIVILEGED"
+    # Um valor vazio salvo significa acesso desativado. Configurações antigas
+    # sem esses campos também mantêm o comportamento anterior, sem acesso ao host.
+    [ "$HOST_SOURCE_SET" = 1 ] || HOST_SOURCE="${PULSO_HOST_SOURCE:-}"
+    [ "$HOST_PRIVILEGED_SET" = 1 ] || HOST_PRIVILEGED="${PULSO_HOST_PRIVILEGED:-no}"
     [ "$IMAGE_REPO_SET" = 1 ] || [ -z "${PULSO_IMAGE_REPO:-}" ] || IMAGE_REPO="$PULSO_IMAGE_REPO"
     [ "$IMAGE_TAG_SET" = 1 ] || [ -z "${PULSO_IMAGE_TAG:-}" ] || IMAGE_TAG="$PULSO_IMAGE_TAG"
     step "Configuração anterior carregada de ${CONF_FILE}."
@@ -765,7 +772,25 @@ check_host_root_readable() {
 
 start_panel() {
     log "Subindo o painel (${PANEL_NAME}) em ${BIND}:${PORT}."
+    previous_user=""
+    if container_exists "$PANEL_NAME"; then
+        previous_user="$(docker inspect --format '{{.Config.User}}' "$PANEL_NAME")"
+    fi
     remove_container "$PANEL_NAME"
+    if [ -z "$HOST_SOURCE" ] || [ "$HOST_PRIVILEGED" != yes ]; then
+        case "$previous_user" in
+            0|0:0|root|root:root)
+                # Ao sair do modo root, contas e estado privados devem continuar
+                # legíveis. Ajusta só o volume de dados do painel, nunca o host.
+                step "Ajustando os dados do painel para uid ${APP_UID}."
+                run docker run --rm --user 0:0 --read-only \
+                    --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+                    --security-opt no-new-privileges:true \
+                    -v "${DATA_VOLUME}:/data" --entrypoint /bin/sh "$IMAGE" \
+                    -c "chown -Rh ${APP_UID}:${APP_GID} /data"
+                ;;
+        esac
+    fi
     # O painel não recebe o socket do Docker. Ele fala com o agente por um
     # socket Unix no volume compartilhado, montado somente para leitura.
     #
@@ -803,7 +828,9 @@ start_panel() {
         fi
         if [ "$HOST_PRIVILEGED" = yes ]; then
             warn "O painel subirá como root com DAC_OVERRIDE, para ler ${HOST_SOURCE}."
-            set -- "$@" --user 0:0 --cap-add DAC_OVERRIDE
+            # FOWNER permite manter as permissões privadas do banco de contas
+            # criado anteriormente pelo uid 10001, sem alterar o dono no host.
+            set -- "$@" --user 0:0 --cap-add DAC_OVERRIDE --cap-add FOWNER
         fi
     fi
     run docker run "$@" "$IMAGE" >/dev/null

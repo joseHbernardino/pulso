@@ -117,24 +117,27 @@ servidor seja exposta.
 
 ### Pelo instalador, sem Compose (recomendado)
 
+Nas instalações novas pelo `get-pulso.sh`, `/` já é disponibilizado para leitura
+em `/host`. O painel roda como root com `DAC_OVERRIDE` e `FOWNER`, permitindo ler
+pastas restritas e manter as permissões privadas das contas. No formulário,
+use os caminhos originais do servidor; `PULSO_HOST_ROOT=/host` faz a tradução.
+
+Para escolher uma pasta em vez de expor o servidor inteiro:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --host-root /ctmagent
 ```
 
-A pasta é montada **somente leitura**, na posição espelhada dentro do painel
-(`/ctmagent` vira `/host/ctmagent`), e `PULSO_HOST_ROOT=/host` passa a traduzir
-os caminhos. Como a tradução é por prefixo, expor apenas a subárvore necessária
-funciona igual a expor `/` — e é o padrão recomendado.
+A montagem é **somente leitura**, na posição espelhada dentro do painel
+(`/ctmagent` vira `/host/ctmagent`). Acrescente `--no-host-root-privileged` para
+executar o painel como uid 10001; nesse caso, a pasta e os arquivos devem
+permitir sua leitura. Use `--no-host-root` para montar apenas a pasta de
+projetos configurada em `--apps-dir`.
 
-Diferente do override de Compose abaixo, aqui o painel **continua sem
-privilégios**, com `--read-only` e `cap_drop ALL`. Antes de subir, o instalador
-prova que o usuário do contêiner (uid 10001) consegue ler a pasta; se não
-consegue, recusa e aponta as duas saídas: dar leitura a outros nessa árvore
-(`chmod o+rX`) ou `--host-root-privileged`, que sobe o painel como root com
-`DAC_OVERRIDE` — apenas em servidor de confiança.
-
-A escolha fica gravada em `/etc/pulso/<projeto>.conf`, então reexecutar o
-instalador a preserva. Para `/` inteiro: `--host-root /`.
+As escolhas ficam gravadas em `/etc/pulso/<projeto>.conf` e são preservadas nas
+reinstalações. Instalações existentes mantêm o acesso anterior. Para habilitar
+`/` nelas, use `--host-root / --host-root-privileged` uma vez. Veja também o
+[acesso ao Docker e ao servidor](install.md#acesso-ao-docker-e-ao-servidor).
 
 ### Pelo override de Compose
 

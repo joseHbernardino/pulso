@@ -53,6 +53,12 @@ Compose. Validated on Debian, Ubuntu, RHEL, Rocky, AlmaLinux, Fedora, Amazon
 Linux 2 and 2023, openSUSE, Arch and Alpine — see the
 [installation guide](docs/install.md) for options, closed networks and upgrades.
 
+New installations give administrators read access to the server's `/` through
+a read-only mount. The panel runs as root with `DAC_OVERRIDE` to read restricted
+project folders. Use `--host-root /srv/projects` to choose another folder,
+`--no-host-root` to disable that mount, or `--no-host-root-privileged` to run
+the panel as uid 10001. Reinstalls preserve the saved access settings.
+
 Choose the port and the IP it listens on in that same single command. The
 `-s --` is what hands the options to the installer instead of to `sh`:
 
@@ -80,8 +86,8 @@ sh get-pulso.sh --token        # the pending first-access code, nothing else
 ```
 
 The code lives inside the panel container at
-`/var/lib/pulso/security/setup-token`, owned by the unprivileged user that runs
-the panel, and stops existing once the administrator is created.
+`/var/lib/pulso/security/setup-token`, accessible to the user that runs the
+panel, and stops existing once the administrator is created.
 
 Once installed, the script is also usable from the host:
 

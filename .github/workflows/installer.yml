@@ -7,12 +7,14 @@ on:
     paths:
       - "scripts/get-pulso.sh"
       - "scripts/test-installer-distros.sh"
+      - "scripts/test-installer-host-access.py"
       - ".github/workflows/installer.yml"
   pull_request:
     branches: [main]
     paths:
       - "scripts/get-pulso.sh"
       - "scripts/test-installer-distros.sh"
+      - "scripts/test-installer-host-access.py"
       - ".github/workflows/installer.yml"
 
 permissions:
@@ -70,6 +72,9 @@ jobs:
 
       - name: Compilar a imagem deste checkout
         run: docker buildx build --load --tag pulso:ci .
+
+      - name: Acesso ao host por padrão e preferências preservadas
+        run: sudo python3 scripts/test-installer-host-access.py pulso:ci
 
       # Projeto e porta próprios para não colidir com nada no runner.
       - name: Instalar com a imagem local

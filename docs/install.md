@@ -14,7 +14,7 @@ Sem `curl`, use `wget -qO- <url> | sudo sh`. O instalador:
 
 1. identifica a distribuição e a arquitetura (x86_64 ou aarch64);
 2. instala o Docker Engine quando ausente;
-3. detecta SELinux e aplica o rótulo privado `:Z` nos binds, sem desabilitá-lo;
+3. configura as montagens com SELinux, sem relabelar a raiz do servidor;
 4. confere a hierarquia de cgroups e avisa quando o host ainda usa v1;
 5. obtém a imagem (publicada, local ou compilada do código);
 6. cria os volumes e a pasta de projetos com a posse correta;
@@ -102,44 +102,55 @@ TOKEN=$(sh get-pulso.sh --token 2>/dev/null)
 
 O `--status` também o exibe enquanto estiver pendente. O código vive em
 `/var/lib/pulso/security/setup-token`, dentro do contêiner do painel, com
-permissão 0600 e dono `10001` — o mesmo usuário sem privilégios que executa o
-painel. Ele **deixa de existir** quando a conta de administrador é criada, e a
-partir daí `--token` informa isso em vez de devolver vazio.
+permissão 0600, acessível ao usuário que executa o painel. Ele **deixa de
+existir** quando a conta de administrador é criada, e a partir daí `--token`
+informa isso em vez de devolver vazio.
 
 Se o painel estiver parado, `--token` diz como iniciá-lo em vez de concluir,
 erradamente, que a conta já foi criada.
 
-## Projetos fora da pasta de projetos
+## Acesso às pastas do servidor
 
-O painel só enxerga o que está montado nele. Um projeto que vive em outro lugar
-do servidor — digamos `/ctmagent/develop/Servicos/minha-api` — aparece como
-*"Este caminho não está disponível dentro do contêiner"*. Exponha a pasta de
-cima uma única vez:
+Nas instalações novas, o painel tem acesso de leitura à raiz `/` do servidor
+por padrão. A montagem fica em `/host`, e o painel roda como root com
+`DAC_OVERRIDE` para também ler pastas restritas, sem exigir mudanças nas
+permissões dos seus projetos. Administradores do painel têm esse acesso.
+
+No formulário, use o caminho original do servidor, por exemplo
+`/ctmagent/develop/Servicos/minha-api`. O painel traduz esse caminho, lê o código
+e o `.env` e envia o projeto ao agente. A montagem é **somente leitura** e não
+recebe `:Z`: o instalador não relabela a raiz ou a árvore de projetos do host.
+Cada aplicação continua executando em seu próprio contêiner.
+
+Para limitar o acesso a uma pasta:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --host-root /ctmagent
+sh get-pulso.sh --host-root /ctmagent
 ```
 
-Todos os projetos abaixo dela passam a ficar disponíveis. A montagem é
-**somente leitura**: o painel apenas lê o código para empacotá-lo e enviar ao
-agente, que compila a imagem.
+Para também executar o painel como uid 10001, sem `DAC_OVERRIDE`:
 
-O caminho é espelhado dentro do contêiner (`/ctmagent` → `/host/ctmagent`), e a
-tradução é por prefixo — por isso expor só a subárvore necessária funciona tão
-bem quanto expor `/`, e evita dar ao painel visão do servidor inteiro. Se quiser
-o servidor todo, use `--host-root /`.
+```bash
+sh get-pulso.sh --host-root /ctmagent --no-host-root-privileged
+```
 
-O painel continua rodando sem privilégios. Antes de subir, o instalador prova
-que o usuário do contêiner consegue ler a pasta; se não conseguir, ele recusa e
-explica as duas saídas em vez de deixar o erro aparecer depois, no painel, com a
-mesma mensagem de "caminho indisponível":
+Nesse modo, o instalador confere se a pasta é legível pelo usuário do painel.
+As subpastas e os arquivos dos projetos também precisam permitir essa leitura.
+Para usar somente a pasta de projetos configurada em `--apps-dir`, sem montar
+o restante do servidor:
 
-- dar permissão de leitura a outros na árvore (`chmod o+rX`);
-- ou `--host-root-privileged`, que sobe o painel como root com `DAC_OVERRIDE`.
-  Use somente em servidor de confiança.
+```bash
+sh get-pulso.sh --no-host-root
+```
 
-A escolha fica gravada em `/etc/pulso/<projeto>.conf`; reexecutar o instalador
-a preserva.
+As escolhas ficam salvas em `/etc/pulso/<projeto>.conf` e são preservadas nas
+reinstalações, inclusive quando o acesso foi desativado. Instalações existentes
+mantêm suas escolhas anteriores; configurações antigas sem esses campos também
+continuam sem montagem do host. Para habilitar o acesso completo nelas uma vez:
+
+```bash
+sh get-pulso.sh --host-root / --host-root-privileged
+```
 
 ## Distribuições validadas
 
@@ -187,8 +198,10 @@ Distribuições derivadas são reconhecidas por `ID_LIKE` no `/etc/os-release`.
 --no-docker-install   Não instala o Docker
 --open-firewall       Libera a porta no firewalld ou ufw ativo
 --apps-dir <path>     Pasta de projetos no host
---host-root <path>    Expõe uma pasta do servidor no painel, somente leitura
---host-root-privileged  Sobe o painel como root para ler árvores fechadas
+--host-root <path>    Pasta do servidor disponível para leitura (padrão /)
+--no-host-root        Desativa a montagem do servidor
+--host-root-privileged  Painel como root para ler pastas restritas (padrão)
+--no-host-root-privileged  Painel como uid 10001, sem DAC_OVERRIDE
 --project <nome>      Nome da instância (permite várias no mesmo host)
 --status              Mostra o estado da instalação
 --token               Mostra o código de primeiro acesso ainda pendente
@@ -260,15 +273,19 @@ sh get-pulso.sh --project homologa  --port 5012
 | Pasta de projetos | `/var/lib/pulso/applications` |
 | Configuração | `/etc/pulso/pulso.conf` |
 
-### Separação de privilégio
+### Acesso ao Docker e ao servidor
 
-O painel **não** recebe o socket do Docker. Ele roda sem privilégios, com
-sistema de arquivos somente leitura e todas as capabilities removidas. Só o
-agente acessa o Engine, e os dois conversam por um socket Unix em um volume
-compartilhado, montado somente para leitura no painel.
+O painel conversa com o agente por um socket Unix em um volume compartilhado,
+montado somente para leitura no painel. O socket do Docker é montado diretamente
+no agente, que executa as operações do Engine.
 
-Isso difere do Portainer, que monta o socket do Docker no próprio contêiner da
-interface. Uma falha na interface do Pulso não alcança o Engine.
+No modo padrão, o painel também roda como root e lê a raiz do servidor. Esse
+acesso inclui recursos locais disponíveis nessa árvore, inclusive sockets;
+uma montagem somente leitura não impede conexões a sockets Unix. Portanto,
+esse modo exige administradores de confiança. Para restringir a visão do
+servidor, escolha uma subpasta com `--host-root`; para remover esse acesso e
+executar o painel como uid 10001, use `--no-host-root`. O agente continua com
+seu próprio acesso ao Engine.
 
 Os contêineres de infraestrutura levam o rótulo `io.pulso.infrastructure=1`,
 para que a gestão de contêineres pelo painel não possa pará-los.
