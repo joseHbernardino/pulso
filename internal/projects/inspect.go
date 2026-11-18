@@ -138,7 +138,12 @@ func Inspect(directory string, lookPath func(string) (string, error)) (Report, e
 			add("Python · "+file, "python", filepath.Join(directory, file), interpreter, nil, python)
 		}
 	}
-	if exists("requirements.txt") || exists("pyproject.toml") {
+	if exists("requirements.txt") || exists("pyproject.toml") || exists("poetry.lock") {
+		if dependencies, err := pythonDependencyPlan(directory); err != nil {
+			report.Notes = append(report.Notes, "Dependências Python: "+err.Error())
+		} else {
+			report.Notes = append(report.Notes, "Gerenciador Python detectado: "+dependencies.manager+".")
+		}
 		report.Notes = append(report.Notes, "O projeto declara dependências Python. Use um ambiente virtual compatível com o Python do contêiner; bibliotecas do host não são automaticamente disponibilizadas.")
 	}
 	for _, file := range []string{"server.js", "index.js", "app.js"} {

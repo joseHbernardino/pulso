@@ -61,6 +61,11 @@ jobs:
       - name: Test portal image update and automatic rollback
         if: matrix.target == 'runtime'
         run: bash scripts/docker-update-smoke.sh pulso:smoke
+      - name: Test Python dependencies with pip and Poetry
+        if: matrix.target == 'runtime'
+        env:
+          PULSO_PROJECT_DOCKER_TEST: "1"
+        run: go test -v -count=1 -timeout 10m -run '^TestPythonDependenciesDocker$' ./internal/projects
 
   publish:
     name: Publish Linux images (${{ matrix.target }})

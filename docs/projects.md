@@ -69,8 +69,8 @@ Entre como administrador e abra **Projetos → Novo projeto**. Escolha:
   O Pulso instala as dependências e executa o script `build`, quando declarado.
   O comando padrão usa `start`, `serve` ou o arquivo `main`/`index.js`.
 - **Python:** selecione a pasta e a versão 3.11, 3.12, 3.13 ou 3.14. O Pulso
-  instala `requirements.txt` ou o pacote de `pyproject.toml`, e inicia `app.py`,
-  `main.py` ou `server.py`.
+  detecta `requirements.txt`, Poetry ou outro `pyproject.toml`, instala as
+  dependências e inicia `app.py`, `main.py` ou `server.py`.
 - **Dockerfile:** selecione uma pasta com `Dockerfile`; o Buildx usa as etapas,
   dependências e comando definidos pelo projeto. Esse modo atende outros
   runtimes e projetos que precisam de bibliotecas do sistema.
@@ -99,6 +99,38 @@ contêiner, sem entrar na imagem ou modificar o arquivo original. A porta public
 automaticamente é registrada para permanecer igual nas próximas implantações.
 O programa precisa escutar em `0.0.0.0` na porta interna escolhida; as receitas
 recebem `PORT` quando ela não foi informada nas variáveis.
+
+### Dependências Python e Poetry
+
+Selecione a raiz que contém o código e o manifesto de dependências. O Pulso
+identifica Poetry por `poetry.lock`, pela seção `[tool.poetry]` ou pelo backend
+`poetry.core.masonry.api` no `pyproject.toml`. Nesse caso, Poetry tem prioridade
+sobre um `requirements.txt` exportado na mesma pasta.
+
+A receita usa Poetry 2.5.1 em um ambiente separado das bibliotecas da aplicação
+e executa `poetry install --only main --no-root --no-interaction --no-ansi`.
+O `poetry.lock` é respeitado quando existe; se estiver desatualizado em relação
+ao manifesto, a compilação falha em vez de trocar versões silenciosamente.
+Sem lockfile, as versões são resolvidas durante a compilação. Dependências de
+desenvolvimento e extras opcionais não são instalados automaticamente.
+
+O ambiente da aplicação fica em `/opt/venv`, disponível tanto para `python`
+quanto para `poetry run`. O código permanece em `/app`; a receita instala as
+dependências sem empacotar o projeto. Projetos que precisam instalar o próprio
+pacote, plugins do Poetry, extras ou outros grupos podem usar um Dockerfile.
+O Poetry não precisa estar instalado no servidor nem na imagem do painel.
+
+Para os demais projetos, `requirements.txt` usa pip e tem prioridade sobre
+um `pyproject.toml` genérico, que é instalado com `pip install .`.
+Sem manifesto, a receita informa que nenhuma biblioteca externa será instalada.
+Se encontrar um manifesto até três pastas acima da pasta selecionada, o painel
+pede a raiz correta. Manifestos necessários excluídos pelo `.dockerignore`
+também produzem um erro antes da compilação.
+
+Um `ModuleNotFoundError` exige conferir se a dependência, como `anyio`, está
+declarada nas dependências de produção. Depois de corrigir os arquivos ou
+atualizar o Pulso, marque **Reconstruir imagem com o código da pasta** e aplique;
+reiniciar o contêiner mantém a imagem e suas dependências anteriores.
 
 ## Dados, recursos e recuperação
 
