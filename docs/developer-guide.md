@@ -108,6 +108,39 @@ make lint
 make clean
 ```
 
+### Nix package
+
+`nix/package.nix` pins `vendorHash`, the hash of the fixed-output derivation
+that downloads the Go modules. It is derived from `go.mod` and `go.sum`, so any
+dependency change invalidates it — including automated Dependabot bumps, which
+know nothing about Nix. A stale hash fails the Nix CI job with a `hash mismatch
+in fixed-output derivation` message that does not say what to do about it.
+
+```bash
+# Rewrite the hash in nix/package.nix
+scripts/update-vendor-hash.sh
+
+# Only verify, printing the correct value on failure (what CI runs)
+scripts/update-vendor-hash.sh --check
+```
+
+The script needs Nix. Without Nix on the machine, run it inside the official
+container — the image ships no `sed` or `tar`, so `nix shell` provides them:
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src nixos/nix \
+  nix --extra-experimental-features 'nix-command flakes' \
+      shell nixpkgs#gnused nixpkgs#gnutar -c scripts/update-vendor-hash.sh
+```
+
+It computes the hash from a copy of the tree, because a flake inside a git
+repository ignores uncommitted changes and would hash the committed `go.mod`
+instead of the one on disk.
+
+Hashes do not compose: merging two dependency bumps produces a third hash, so
+recompute it after every merge rather than reusing a value from an earlier
+branch.
+
 ## Adding a Runtime Adapter
 
 Runtime adapters detect and start applications written in a specific language. Each adapter implements the `Runtime` interface from `internal/runtime/runtime.go`.

@@ -21,7 +21,7 @@ import (
 func statsServer(t *testing.T, agent http.HandlerFunc) (*Server, map[string]string) {
 	t.Helper()
 	dir := t.TempDir()
-	updates := t.TempDir()
+	updates := shortTempDir(t)
 
 	store, err := auth.OpenUserStore(filepath.Join(dir, "auth.sqlite"))
 	if err != nil {

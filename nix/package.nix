@@ -1,6 +1,7 @@
 {
   lib,
   buildGoModule,
+  python3,
   src,
   version ? "dev",
 }:
@@ -8,7 +9,7 @@ buildGoModule {
   pname = "pulso";
   inherit version src;
 
-  vendorHash = "sha256-K7zqeBAkawEOqHY1mXvIl77pHx263eqNyEHZr6P+zSs=";
+  vendorHash = "sha256-lR4kGwOO4FUMxVd2shAeJYJKTGTDyVAOQWCUG7kf0to=";
 
   proxyVendor = true;
 
@@ -23,6 +24,11 @@ buildGoModule {
 
   # e2e tests need a running supervisor
   checkFlags = [ "-short" ];
+
+  # O teste de inspeção de projetos resolve o interpretador no PATH para provar
+  # que uma sugestão Python é preparável. Sem python3 na fase de testes ele
+  # falharia pelo ambiente, não pelo código.
+  nativeCheckInputs = [ python3 ];
 
   meta = {
     description = "A modern process manager and application supervisor";

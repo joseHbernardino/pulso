@@ -1,4 +1,4 @@
-.PHONY: build test lint vet clean install fmt fmt-check
+.PHONY: build test lint vet clean install fmt fmt-check vendor-hash
 
 BINARY=pulso
 BUILD_DIR=./bin
@@ -23,6 +23,10 @@ fmt:
 
 fmt-check:
 	@! gofmt -l . | grep -q . || (echo "Files need formatting:"; gofmt -l .; exit 1)
+
+# Recompute the Nix vendorHash after a dependency change (requires Nix)
+vendor-hash:
+	scripts/update-vendor-hash.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

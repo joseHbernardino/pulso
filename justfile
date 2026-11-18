@@ -36,6 +36,10 @@ fmt:
 fmt-check:
     @! gofmt -l . | grep -q . || (echo "Files need formatting:"; gofmt -l .; exit 1)
 
+# Recompute the Nix vendorHash after a dependency change (requires Nix)
+vendor-hash:
+    scripts/update-vendor-hash.sh
+
 # Remove build artifacts
 clean:
     rm -rf {{ buildDir }}

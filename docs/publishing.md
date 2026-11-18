@@ -21,6 +21,9 @@ If you publish a Go module, replace `pulso.local/pulso` consistently in go.mod,
 imports and linker flags with your actual module path before tagging a release.
 
 The Nix dependency vendor hash includes the pure Go SQLite driver and its
-dependencies. Verify the package with `nix build .` before publishing it.
+dependencies. It is tied to `go.mod` and `go.sum`, so refresh it with
+`scripts/update-vendor-hash.sh` whenever a dependency changes, then verify the
+package with `nix build .` before publishing it. See the Nix package section of
+[developer-guide.md](developer-guide.md).
 
 Keep LICENSE intact when redistributing this source or binaries.

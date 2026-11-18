@@ -31,7 +31,7 @@ func TestUpdateRequiresPersistentAdministrator(t *testing.T) {
 }
 func TestUpdateSavesDesiredStateBeforeRequestingWorker(t *testing.T) {
 	dir := t.TempDir()
-	updates := t.TempDir()
+	updates := shortTempDir(t)
 	store, err := auth.OpenUserStore(filepath.Join(dir, "auth.sqlite"))
 	if err != nil {
 		t.Fatal(err)
