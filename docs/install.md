@@ -52,6 +52,30 @@ e o endereço escolhidos ficam gravados em `/etc/pulso/<projeto>.conf`, então
 não é preciso repeti-los a cada atualização — informá-los de novo é que muda a
 configuração.
 
+## Botão de atualização desabilitado
+
+O botão **Atualizar Pulso** instala imagens publicadas, identificadas por uma
+versão de release. Ele exige que o painel e o serviço auxiliar usem
+`ghcr.io/josehbernardino/pulso:latest` ou a variante `latest-python311`.
+Encontrar uma release no GitHub não significa que a instalação atual atende
+a esse requisito.
+
+Uma imagem como `pulso:local` é compilada do código e deve ser atualizada pelo
+mesmo instalador usado na máquina. Em uma instalação feita com o instalador de
+uma linha, execute-o novamente com `--build` para continuar nesse modo, ou
+`--registry` para exigir a imagem publicada. Para uma instalação Compose a
+partir de um checkout:
+
+```bash
+cd /root/pulso
+bash scripts/pulso-docker.sh update
+```
+
+Nesse checkout, `bash scripts/pulso-docker.sh start --registry --updates`
+seleciona as imagens publicadas e habilita o auxiliar de atualização. O pacote
+precisa estar publicado e acessível antes dessa troca. Alterar apenas o nome
+da imagem local com `docker tag` não a transforma em uma release publicada.
+
 ## Primeiro acesso
 
 Não existe senha padrão. O painel gera um **código de primeiro acesso** no

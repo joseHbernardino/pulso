@@ -111,11 +111,11 @@ func (a *Agent) close() {
 func trackingTag(ref, repo string) (string, error) {
 	prefix := repo + ":"
 	if !strings.HasPrefix(ref, prefix) {
-		return "", fmt.Errorf("a imagem precisa usar o repositório %s", repo)
+		return "", fmt.Errorf("a imagem %q não usa o repositório publicado %s. Atualize com o instalador usado nesta máquina. Para habilitar o botão, o painel e o serviço auxiliar precisam usar %s:latest ou %s:latest-python311", ref, repo, repo, repo)
 	}
 	tag := strings.TrimPrefix(ref, prefix)
 	if tag != "latest" && tag != "latest-python311" {
-		return "", fmt.Errorf("a atualização pelo painel exige a tag latest ou latest-python311; imagens locais e tags fixadas usam atualização pelo Compose")
+		return "", fmt.Errorf("a imagem %q usa uma tag fixada ou uma referência não compatível. A atualização pelo painel exige a tag latest ou latest-python311 no painel e no serviço auxiliar. Atualize com o instalador usado nesta máquina ou configure essas tags para habilitar o botão", ref)
 	}
 	if tag == "latest-python311" {
 		return "-python311", nil
