@@ -43,7 +43,7 @@ Pulso runs as a container and deploys each application as its own container.
 One command, on any Linux distribution:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sh
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh
 ```
 
 The installer detects the distribution, installs Docker Engine when missing,
@@ -53,10 +53,30 @@ Compose. Validated on Debian, Ubuntu, RHEL, Rocky, AlmaLinux, Fedora, Amazon
 Linux 2 and 2023, openSUSE, Arch and Alpine — see the
 [installation guide](docs/install.md) for options, closed networks and upgrades.
 
+Choose the port and the IP it listens on in that same single command. The
+`-s --` is what hands the options to the installer instead of to `sh`:
+
 ```bash
-sh get-pulso.sh --port 8080 --bind 127.0.0.1   # internal only, custom port
-sh get-pulso.sh --local                        # air-gapped, image already loaded
-sh get-pulso.sh --status                       # installation state
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --port 8080 --ip 10.0.0.5
+```
+
+Environment variables do the same, which suits automation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | PULSO_PORT=8080 PULSO_BIND=10.0.0.5 sudo -E sh
+```
+
+`--ip` and `--bind` are the same option. The default is `0.0.0.0`; give a
+private address, or `127.0.0.1`, to keep the panel off the network. Re-running
+the command upgrades an existing installation in place and keeps the port and
+address you chose before.
+
+Once installed, the script is also usable from the host:
+
+```bash
+sh get-pulso.sh --status       # installation state
+sh get-pulso.sh --local        # air-gapped, image already loaded
+sh get-pulso.sh --uninstall    # remove containers, keep the data volumes
 ```
 
 ### Build from source

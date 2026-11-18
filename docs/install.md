@@ -7,10 +7,10 @@ Docker Compose.
 ## Uma linha
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sh
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh
 ```
 
-Sem `curl`, use `wget -qO- <url> | sh`. O instalador:
+Sem `curl`, use `wget -qO- <url> | sudo sh`. O instalador:
 
 1. identifica a distribuição e a arquitetura (x86_64 ou aarch64);
 2. instala o Docker Engine quando ausente;
@@ -22,6 +22,35 @@ Sem `curl`, use `wget -qO- <url> | sh`. O instalador:
 8. imprime o endereço e o código de primeiro acesso.
 
 Ao terminar, abra o endereço indicado e crie o administrador com o código exibido.
+
+## Porta e IP no mesmo comando
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --port 8080 --ip 10.0.0.5
+```
+
+O `-s --` é o que faz o `sh` entregar as opções ao instalador em vez de
+interpretá-las como nome de arquivo. Sem ele, o `sh` tenta abrir `--port` como
+um script e nada acontece.
+
+As variáveis de ambiente fazem o mesmo, o que serve melhor para automação:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | PULSO_PORT=8080 PULSO_BIND=10.0.0.5 sudo -E sh
+```
+
+O `-E` preserva as variáveis ao escalar com `sudo`; sem ele o `sudo` as
+descarta e o instalador usa os padrões.
+
+`--ip` e `--bind` são a mesma opção, com nomes diferentes para quem pensa em
+"o IP" e para quem pensa em "endereço de escuta". O padrão é `0.0.0.0`
+(todas as interfaces); informe um endereço privado, ou `127.0.0.1`, para manter
+o painel fora da rede.
+
+Executar o comando de novo **atualiza a instalação existente** no lugar. A porta
+e o endereço escolhidos ficam gravados em `/etc/pulso/<projeto>.conf`, então
+não é preciso repeti-los a cada atualização — informá-los de novo é que muda a
+configuração.
 
 ## Distribuições validadas
 

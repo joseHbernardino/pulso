@@ -97,8 +97,9 @@ Uso: get-pulso.sh [opções]
 
 Opções:
   --port <n>          Porta publicada do painel (padrão 5011)
-  --bind <endereço>   Endereço de escuta (padrão 0.0.0.0; use 127.0.0.1 para
-                      expor apenas localmente)
+  --bind <endereço>   IP em que o painel escuta (padrão 0.0.0.0; use 127.0.0.1
+  --ip <endereço>     para expor apenas localmente). As duas formas são a mesma
+                      opção.
   --registry          Exige a imagem publicada; não compila
   --build             Compila a imagem a partir do código-fonte baixado
   --local             Usa uma imagem já presente no host; não acessa a rede
@@ -124,7 +125,7 @@ USAGE
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) [ $# -ge 2 ] || die "--port exige um valor"; PORT="$2"; PORT_SET=1; shift 2 ;;
-        --bind) [ $# -ge 2 ] || die "--bind exige um valor"; BIND="$2"; BIND_SET=1; shift 2 ;;
+        --bind|--ip) [ $# -ge 2 ] || die "$1 exige um valor"; BIND="$2"; BIND_SET=1; shift 2 ;;
         --image) [ $# -ge 2 ] || die "--image exige um valor"; IMAGE_REPO="$2"; IMAGE_REPO_SET=1; shift 2 ;;
         --tag) [ $# -ge 2 ] || die "--tag exige um valor"; IMAGE_TAG="$2"; IMAGE_TAG_SET=1; shift 2 ;;
         --apps-dir) [ $# -ge 2 ] || die "--apps-dir exige um valor"; APPS_DIR="$2"; APPS_DIR_SET=1; shift 2 ;;
@@ -489,13 +490,18 @@ ensure_buildx() {
     fi
     need_root
     step "Instalando o plugin Buildx."
+    # O nome do pacote depende de QUEM empacotou o Engine, não da família: os
+    # repositórios da Docker publicam docker-buildx-plugin, enquanto Ubuntu,
+    # Debian e Fedora, que empacotam o Engine por conta própria, publicam
+    # docker-buildx. Quem instalou o Docker pela própria distribuição não tem o
+    # repositório da Docker configurado, e tentar só o primeiro nome falha.
     case "$(os_family)" in
-        debian) priv_sh "apt-get update && apt-get install -y docker-buildx-plugin" ;;
-        rhel)   priv_sh "(dnf -y install docker-buildx-plugin || yum -y install docker-buildx-plugin)" ;;
+        debian) priv_sh "apt-get update && (apt-get install -y docker-buildx-plugin || apt-get install -y docker-buildx)" ;;
+        rhel)   priv_sh "(dnf -y install docker-buildx-plugin || dnf -y install docker-buildx || yum -y install docker-buildx-plugin || yum -y install docker-buildx)" ;;
         suse)   priv_sh "zypper --non-interactive install docker-buildx" ;;
         arch)   priv_sh "pacman -Sy --noconfirm docker-buildx" ;;
         alpine) priv_sh "apk add --no-cache docker-cli-buildx" ;;
-        *)      die "Não sei instalar o Buildx em '${OS_ID}'. Instale o docker-buildx-plugin, ou use --registry/--local." ;;
+        *)      die "Não sei instalar o Buildx em '${OS_ID}'. Instale o docker-buildx-plugin (repositórios da Docker) ou docker-buildx (empacotado pela distribuição), ou use --registry/--local." ;;
     esac
     if [ "$DRY_RUN" = "1" ]; then
         return 0
@@ -507,8 +513,12 @@ build_image() {
     IMAGE="${PULSO_PROJECT}:local"
     log "Compilando a imagem a partir do código-fonte."
     ensure_buildx
-    if [ -f "$(dirname "$0")/../Dockerfile" ] && [ -f "$(dirname "$0")/../go.mod" ]; then
-        context="$(cd "$(dirname "$0")/.." && pwd)"
+    # Num `curl ... | sh` o $0 é "sh", então dirname aponta para o diretório
+    # atual e o teste cairia no projeto que estiver por ali. Conferir o módulo
+    # no go.mod evita compilar a árvore errada.
+    context="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || context=""
+    if [ -n "$context" ] && [ -f "$context/Dockerfile" ] &&
+        grep -q '^module pulso.local/pulso' "$context/go.mod" 2>/dev/null; then
         step "Usando o checkout local: ${context}"
         run docker buildx build --load --tag "$IMAGE" "$context"
         return 0
@@ -809,6 +819,12 @@ do_uninstall() {
 
 do_purge() {
     if [ "$ASSUME_YES" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+        # Num `curl ... | sh` a entrada padrão é o próprio script: um read aqui
+        # consumiria uma linha do código como se fosse a resposta. Exigir --yes
+        # é mais honesto do que aceitar uma confirmação que o usuário não deu.
+        if [ ! -t 0 ]; then
+            die "O --purge apaga contas e cadastros, e aqui não há terminal para confirmar. Repita com --yes se é isso que você quer."
+        fi
         printf 'Isto remove contas, cadastros e o histórico do Pulso em %s. Digite "remover" para confirmar: ' "$DATA_VOLUME"
         read -r answer
         [ "$answer" = "remover" ] || die "Cancelado."
