@@ -85,6 +85,38 @@ partir daí `--token` informa isso em vez de devolver vazio.
 Se o painel estiver parado, `--token` diz como iniciá-lo em vez de concluir,
 erradamente, que a conta já foi criada.
 
+## Projetos fora da pasta de projetos
+
+O painel só enxerga o que está montado nele. Um projeto que vive em outro lugar
+do servidor — digamos `/ctmagent/develop/Servicos/minha-api` — aparece como
+*"Este caminho não está disponível dentro do contêiner"*. Exponha a pasta de
+cima uma única vez:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joseHbernardino/pulso/main/scripts/get-pulso.sh | sudo sh -s -- --host-root /ctmagent
+```
+
+Todos os projetos abaixo dela passam a ficar disponíveis. A montagem é
+**somente leitura**: o painel apenas lê o código para empacotá-lo e enviar ao
+agente, que compila a imagem.
+
+O caminho é espelhado dentro do contêiner (`/ctmagent` → `/host/ctmagent`), e a
+tradução é por prefixo — por isso expor só a subárvore necessária funciona tão
+bem quanto expor `/`, e evita dar ao painel visão do servidor inteiro. Se quiser
+o servidor todo, use `--host-root /`.
+
+O painel continua rodando sem privilégios. Antes de subir, o instalador prova
+que o usuário do contêiner consegue ler a pasta; se não conseguir, ele recusa e
+explica as duas saídas em vez de deixar o erro aparecer depois, no painel, com a
+mesma mensagem de "caminho indisponível":
+
+- dar permissão de leitura a outros na árvore (`chmod o+rX`);
+- ou `--host-root-privileged`, que sobe o painel como root com `DAC_OVERRIDE`.
+  Use somente em servidor de confiança.
+
+A escolha fica gravada em `/etc/pulso/<projeto>.conf`; reexecutar o instalador
+a preserva.
+
 ## Distribuições validadas
 
 O workflow [Installer](../.github/workflows/installer.yml) executa o instalador
@@ -131,6 +163,8 @@ Distribuições derivadas são reconhecidas por `ID_LIKE` no `/etc/os-release`.
 --no-docker-install   Não instala o Docker
 --open-firewall       Libera a porta no firewalld ou ufw ativo
 --apps-dir <path>     Pasta de projetos no host
+--host-root <path>    Expõe uma pasta do servidor no painel, somente leitura
+--host-root-privileged  Sobe o painel como root para ler árvores fechadas
 --project <nome>      Nome da instância (permite várias no mesmo host)
 --status              Mostra o estado da instalação
 --token               Mostra o código de primeiro acesso ainda pendente
