@@ -87,11 +87,13 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build
 
 ## Subir a imagem publicada
 
-O workflow [Container](../.github/workflows/container.yml) testa a imagem em PRs e
-na branch principal. Ao enviar uma tag de versão como `v0.2.0`, ele publica no
-GitHub Container Registry imagens para `linux/amd64` e `linux/arm64`. Versões
-estáveis também atualizam `latest`; prévias como `v0.2.0-rc.1` não alteram `latest`.
-A publicação só ocorre depois que os testes da imagem passam.
+Cada push na `main` inicia o workflow [Release](../.github/workflows/release.yml).
+Depois das validações de CI, contêiner e instalador, ele cria automaticamente a
+próxima tag de correção, publica os binários e as imagens `linux/amd64` e
+`linux/arm64` no GHCR e disponibiliza a release. Versões estáveis também atualizam
+`latest` e `latest-python311`. Tags manuais continuam aceitas; prévias como
+`v0.2.0-rc.1` não alteram `latest`. Veja o [fluxo de publicação](publishing.md)
+para incrementos de versão maior ou menor e repetição de execuções com falha.
 
 A primeira imagem precisa ser publicada para estes comandos funcionarem:
 

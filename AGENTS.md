@@ -113,7 +113,7 @@ make test && go test -v -count=1 -timeout 120s ./internal/e2e/...
 - Config file: `pulso.yaml` in project root. Example at `configs/pulso.example.yaml`.
 - Data dir: `~/.pulso/` (`apps/`, `state/`, `tmp/`, `dump.json`). Legacy: `~/.local/share/pulso/`.
 - Save/resurrect reads `dump.json`, falls back to `state.json` for backward compat.
-- Release is tag-triggered: `git tag v0.x.0 && git push --tags`. GoReleaser handles the rest.
+- Release runs automatically on pushes to main after CI, container and installer checks. It reserves the next patch tag, packages binaries, publishes versioned images, then promotes latest and publishes the release. Manual v* tags and workflow_dispatch minor/major bumps are also supported; see docs/publishing.md.
 - Process group signaling: `Setpgid: true` + `Kill(-pid, signal)` signals entire group.
 - `exited` channel is `make()`-d fresh on each `Start()`, `close()`-d exactly once by `handleExit()`.
 - Web frontend is `//go:embed`-ded into the binary at `internal/web/server.go`.

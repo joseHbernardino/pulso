@@ -193,8 +193,11 @@ sudo install -d -m 0750 -o 10001 -g 10001 applications
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
-The dashboard is exposed on port `5011`. Release tags publish multi-platform
-images to GHCR; once published, updates use `docker compose pull pulso` followed
+The dashboard is exposed on port `5011`. Each validated push to `main` creates
+the next patch tag and a GitHub release with binaries and multi-platform GHCR
+images. Both runtime variants are ready before the release becomes visible to
+the updater; see [automatic publishing](docs/publishing.md). Once published,
+updates use `docker compose pull pulso` followed
 by `docker compose up -d`. See the [Docker deployment guide](docs/docker.md) for
 registry installation, RHEL/SELinux, application paths and persistence. For
 projects spread across the server, the optional `compose.host.yaml` mounts the

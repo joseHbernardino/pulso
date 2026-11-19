@@ -1,14 +1,8 @@
 name: Installer
 
 on:
+  workflow_call:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "scripts/get-pulso.sh"
-      - "scripts/test-installer-distros.sh"
-      - "scripts/test-installer-host-access.py"
-      - ".github/workflows/installer.yml"
   pull_request:
     branches: [main]
     paths:

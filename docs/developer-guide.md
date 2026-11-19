@@ -346,12 +346,18 @@ func (s *MCPServer) handleMyTool(ctx context.Context, args map[string]interface{
 
 ## Release Process
 
-Releases are automated via GitHub Actions and GoReleaser:
+Each push to `main` starts the GitHub Actions Release workflow:
 
-1. Tag a release: `git tag v0.x.0 && git push --tags`
-2. The release workflow builds for all platforms (Linux, macOS, Windows; amd64, arm64)
-3. Artifacts include: binaries, DEB/RPM/APK packages, Homebrew formula, checksums
-4. Changelog is generated from conventional commits
+1. Run CI, container and installer validations.
+2. Create the next patch version tag automatically.
+3. Build Linux and macOS binaries for amd64/arm64, Windows amd64 binaries,
+   platform archives, checksums and both multi-platform Docker runtime variants.
+4. Promote stable Docker images to `latest` and publish the GitHub release with
+   generated release notes after all assets are ready.
+
+Use **Actions → Release → Run workflow** on `main` to request a minor or major
+increment. Manual version tags remain supported. See [publishing.md](publishing.md)
+for retry behavior, publication ordering and required token permissions.
 
 ### Commit Convention
 

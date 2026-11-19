@@ -1,21 +1,10 @@
 name: CI
 
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"
-  push:
-    branches: [main]
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "flake.nix"
-      - "flake.lock"
-      - ".github/**"
-      - "internal/web/frontend/**"
-      - "nix/**"
-      - "scripts/update-vendor-hash.sh"
   pull_request:
     branches: [main]
     paths:
@@ -28,6 +17,8 @@ on:
       - "internal/web/frontend/**"
       - "nix/**"
       - "scripts/update-vendor-hash.sh"
+      - "scripts/release_automation.py"
+      - "scripts/test_release_*.py"
 
 permissions:
   contents: read
@@ -43,6 +34,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Test release automation
+        run: python3 -m unittest discover -s scripts -p 'test_release_*.py' -v
 
       - name: Verify dependencies
         run: go mod verify
