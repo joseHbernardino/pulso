@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags="-s -w -X pulso.local/pulso/internal/version.Version=${VERSION} -X pulso.local/pulso/internal/version.Revision=${REVISION} -X pulso.local/pulso/internal/version.BuildTime=${BUILD_TIME} -X pulso.local/pulso/internal/version.ReleaseRepository=${RELEASE_REPOSITORY}" \
     -o /out/pulso ./cmd/pulso
 
-FROM python:3.11-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS python311
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS python311
 
 FROM docker:29.10.0-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d AS dockercli
 
