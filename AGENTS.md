@@ -13,7 +13,8 @@ pulso/
 ├── cmd/pulso/           CLI — 26 cobra command files, registered in root.go
 ├── internal/
 │   ├── supervisor/      Core engine — process lifecycle, state machine, restart/backoff
-│   ├── runtime/         Adapters (Go, Python, Node, Bun, Deno, Ruby, PHP) — implement Runtime interface
+│   ├── runtime/         Adapters (Go, Python, Node, Bun, Deno, Ruby, PHP, shell) — implement Runtime interface
+│   ├── command/         One-off shell execution (pulso exec, dashboard console) — streams output, bounded
 │   ├── daemon/          HTTP-over-Unix-socket IPC (server, client, protocol)
 │   ├── mcp/             MCP server for AI agents (stdio + HTTP transports)
 │   ├── web/             Chi HTTP + WebSocket dashboard (embedded frontend)
@@ -77,6 +78,8 @@ make test && go test -v -count=1 -timeout 120s ./internal/e2e/...
 | Add a CLI command            | `cmd/pulso/<command>.go` — follow `root.go` registration pattern                                  |
 | Add a daemon IPC action      | `internal/daemon/protocol.go` (constant + payload) → `server.go` (handler) → `client.go` (method) |
 | Add a runtime adapter        | `internal/runtime/<name>.go` — implement `Runtime` interface                                      |
+| Change shell resolution      | `internal/runtime/shell.go` — `ShellCommandLine` is shared by the runtime and `internal/command`  |
+| Change one-off execution     | `internal/command/runner.go` → `cmd/pulso/exec.go` (CLI) and `internal/web/exec.go` (API/console)  |
 | Add a shared type            | `pkg/types/<name>.go`                                                                             |
 | Add a lifecycle hook         | `internal/hooks/executor.go` — `Executor.RunPre/RunPost`                                          |
 | Add a test helper            | Co-locate in `_test.go` file or `internal/e2e/` for integration                                   |
@@ -92,11 +95,28 @@ make test && go test -v -count=1 -timeout 120s ./internal/e2e/...
 - **Error wrapping:** `fmt.Errorf("context: %w", err)` everywhere. Caller decides to log.
 - **State machine:** Lock-free via `atomic.Value` + `CompareAndSwap` loop. See `pkg/types/process.go` for `ValidTransitions`.
 - **Process lookup:** Exact ID → exact name → unique ID prefix (ambiguous prefix rejected).
-- **Runtime detection:** Go → Python → Node.js → Bun → Deno → Ruby → PHP. `--runtime` flag skips detection.
+- **Runtime detection:** Go → Python → Node.js → Bun → Deno → Ruby → PHP. `--runtime` flag skips detection. The shell runtime is never detected — it is explicit only, so a stray `start.sh` does not hijack a project.
 - **Tests:** Table-driven where applicable. Standard library `testing` only (no testify). E2E tests use real supervisor with `sleep` commands.
 - **Commits:** Conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `perf:`).
 - **Build:** `CGO_ENABLED=0`, `-trimpath`, version/build-time via `-ldflags -X`.
 - **No `init()` functions** — all initialization is explicit via constructor functions.
+
+## Shell Execution Boundary
+
+Arguments are never passed through a shell, except in three places that are
+explicit about it: the `shell` runtime, `pulso exec` and `POST /api/v1/exec`
+(the dashboard console). Rules that must hold when touching them:
+
+- The web console requires an authenticated **administrator**; `s.users == nil`
+  means no administrator exists and the endpoint refuses.
+- Every attempt is audited as `command.exec`, and `auditCommandDetail`
+  replaces `NAME=value` values before the entry is written.
+- Concurrency (`maxConcurrentExec`), timeout (`command.MaxTimeout`) and
+  streamed output (`maxStreamedOutput`) are bounded.
+- A cancelled or timed-out command signals the whole **process group**, then
+  escalates after `command.StopGrace`.
+- `/api/v1/exec` is excluded from the router's request timeout via
+  `timeoutExcept`; it streams NDJSON for as long as the command runs.
 
 ## Anti-Patterns (This Project)
 

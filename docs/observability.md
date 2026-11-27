@@ -72,7 +72,10 @@ GET /api/v1/audit?actor=&action=&hours=&limit=     # somente administrador
 | `ip`, `user_agent` | Endereço do par e cliente |
 
 O filtro de `action` casa por prefixo: `application.` seleciona a família
-inteira.
+inteira. `command.exec` registra cada execução do console e do endpoint
+`/api/v1/exec`, inclusive as recusadas por papel; `command.exec.stop` registra
+quem interrompeu um comando em andamento. Veja
+[comandos e scripts shell](shell-commands.md).
 
 ### O que garante que não há segredo no registro
 
@@ -83,6 +86,10 @@ inteira.
   registra `variáveis: API_KEY, DATABASE_URL` — as chaves, em ordem.
 - **O IP é o do par, não o de cabeçalho.** `X-Forwarded-For` é controlado por
   quem chama; um registro de auditoria não pode ser forjável.
+- **O comando do console entra com os valores atribuídos substituídos.** Uma
+  execução registra `command.exec` com a primeira linha do comando, e todo
+  trecho `NOME=valor` vira `NOME=***` — a linha de comando é um dos poucos
+  lugares em que alguém digita uma senha direto (`PGPASSWORD=… pg_dump`).
 
 ### Abrangência
 

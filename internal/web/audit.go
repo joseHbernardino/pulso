@@ -25,6 +25,8 @@ var auditActions = map[string]string{
 	"POST /api/auth/logout":                             "auth.logout",
 	"POST /api/auth/setup":                              "auth.setup",
 	"POST /api/v1/processes":                            "process.start",
+	"POST /api/v1/exec":                                 "command.exec",
+	"POST /api/v1/exec/{id}/stop":                       "command.exec.stop",
 	"POST /api/v1/processes/{id}/stop":                  "process.stop",
 	"POST /api/v1/processes/{id}/restart":               "process.restart",
 	"POST /api/v1/processes/{id}/reload":                "process.reload",

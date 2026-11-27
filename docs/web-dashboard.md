@@ -5,7 +5,10 @@ Abra o painel no endereço configurado no servidor e entre como administrador.
 1. Clique em **Nova aplicação** e informe um nome único.
 2. Escolha o tipo de execução. **Automático pelo arquivo** reconhece Python,
    JavaScript, TypeScript, Go, Ruby e PHP. Para comandos como `npm` ou um binário,
-   escolha **Executável ou comando**.
+   escolha **Executável ou comando**. Para uma linha de comando com canos,
+   `&&` ou redirecionamento, para um arquivo `.sh` do servidor ou para um
+   script escrito aqui, escolha **Script bash / comando shell** — aparece o
+   campo **Script shell**, e o **Interpretador** passa a escolher o shell.
 3. Use **Selecionar** para localizar o executável ou script e a pasta de trabalho.
    Os botões mostram os arquivos disponíveis para esta instalação. Ambos são caminhos no
    servidor em que o Pulso está rodando. Separe os argumentos do nome do programa.
@@ -92,3 +95,33 @@ Em Docker, volumes reconhecidos ou aliases configurados permitem informar o
 caminho do host; o painel o traduz para o contêiner. Disponibilize uma pasta
 raiz para atender todos os projetos abaixo dela. Veja
 [reconhecimento de caminhos no Docker](docker.md#reconhecer-caminhos-de-vários-projetos).
+
+## Console de comandos
+
+**Console**, no menu lateral, executa um comando ou script neste servidor e
+mostra a saída enquanto ela acontece. A página oferece pasta de trabalho,
+contexto de aplicação (que empresta pasta, variáveis e `.env`), interpretador,
+tempo limite, comandos prontos, histórico no próprio navegador e
+**Parar comando**.
+
+Fechar a página não interrompe o comando: uma migração não deve morrer no meio.
+O que encerra é o tempo limite ou **Parar comando**.
+
+Três regras valem sempre:
+
+- **Só administradores.** Perfil de visualização e sessão ausente são
+  recusados pelo servidor, não apenas pela interface. Uma instalação sem contas
+  não tem administrador, então o console também recusa.
+- **Tudo fica auditado.** Cada tentativa entra como `command.exec`, com a
+  primeira linha do comando e a conta que executou, inclusive as recusadas.
+  Trechos `NOME=valor` são gravados como `NOME=***`.
+- **Há limites.** No máximo quatro comandos ao mesmo tempo, 30 minutos por
+  comando e um teto de saída exibida — o comando continua, só a exibição para
+  de crescer.
+
+O console roda onde o painel roda. Em Docker, isso é dentro do contêiner do
+painel. Para agir dentro do contêiner de uma aplicação, use as ações da própria
+aplicação na página **Projetos**.
+
+Detalhes, incluindo a API `/api/v1/exec`, em
+[comandos e scripts shell](shell-commands.md).

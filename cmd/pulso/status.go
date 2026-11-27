@@ -81,6 +81,9 @@ func printProcessStatus(info types.ProcessInfo, format string) error {
 			kv.Add("Started", info.StartedAt.Format("2006-01-02 15:04:05"))
 		}
 		kv.Add("Entrypoint", info.Config.Entrypoint)
+		if command := shellSourceLine(info.Config); command != "" {
+			kv.Add("Command", command)
+		}
 		kv.Add("Cwd", info.Config.Cwd)
 		kv.Add("Restart Policy", string(info.Config.RestartPolicy))
 		kv.Add("Auto Restart", output.EnabledSprint(info.Config.AutoRestart == nil || *info.Config.AutoRestart))

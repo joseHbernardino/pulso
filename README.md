@@ -16,6 +16,8 @@ Pulso manages your applications — Go, Python, Node.js/TypeScript, Bun, Deno, R
 
 - **Application containers** — deploy images, Node.js, Python and Dockerfile projects from the dashboard with separate environments, persistent storage and resource limits
 - **Multi-runtime support** — Go, Python, Node.js/TypeScript, Bun, Deno, Ruby, PHP
+- **Shell commands and scripts** — supervise a command line with pipes or an inline bash script, with `runtime: shell`
+- **One-off execution** — `pulso exec` and a dashboard console run a command or script on the server, streaming the output, with every attempt audited
 - **Auto-detection** — Pulso detects your project's runtime automatically
 - **Process lifecycle** — start, stop, restart, reload, with configurable restart policies
 - **Exponential backoff** — crash-loop protection with configurable max restarts
@@ -136,6 +138,14 @@ pulso start server.go
 pulso start index.ts
 pulso start dev --runtime bun
 
+# Run a shell command line or a bash script as a supervised application
+pulso start --runtime shell "node server.js | tee -a /var/log/app.log"
+pulso start --name backup --script 'pg_dump app | gzip > /bak/app.sql.gz'
+
+# Run a command once and read its output (exits with the command's own status)
+pulso exec "docker ps --format '{{.Names}}' | sort"
+pulso exec --app api "rails db:migrate"
+
 # List running processes
 pulso list
 
@@ -209,7 +219,12 @@ You can also create applications in the browser: open `pulso web`, click
 **Nova aplicação**, and enter a program or script already on the server. The
 form supports runtime selection, working directories, arguments, environment
 variables and restart policies. Optionally set a `.env` path to load or create the file in
-the panel. Use **Editar** to save application settings and dotenv changes, then
+the panel. For a command line with pipes, a `.sh` file on the server or a script written
+in the form, choose **Script bash / comando shell** as the execution type.
+The **Console** page runs a one-off command on the server and streams its
+output; it is restricted to administrators and every attempt is audited. See
+[shell commands and scripts](docs/shell-commands.md).
+Use **Editar** to save application settings and dotenv changes, then
 restart the application to apply them. Dotenv editing is restricted to admins.
 The daemon dashboard requires login and stores
 accounts and sessions in SQLite. On first access, create an administrator using
@@ -256,6 +271,14 @@ processes:
     watch:
       enabled: true
       paths: ["./src"]
+
+  - name: "nightly-backup"
+    runtime: "shell"
+    script: |
+      set -euo pipefail
+      pg_dump "$DATABASE_URL" | gzip > /bak/app-$(date +%F).sql.gz
+    restart_policy: "never"
+    cron_restart: "0 3 * * *"
 ```
 
 See `configs/pulso.example.yaml` for the full configuration reference.
@@ -297,6 +320,7 @@ processes:
 | Command                         | Description                            |
 | ------------------------------- | -------------------------------------- |
 | `pulso start <entrypoint>`      | Start a managed process                |
+| `pulso exec <command>`          | Run a one-off command or script        |
 | `pulso stop <id\|name\|all>`    | Stop process(es)                       |
 | `pulso restart <id\|name\|all>` | Restart process(es)                    |
 | `pulso reload <id\|name>`       | Graceful reload                        |
@@ -378,6 +402,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, and examples
 - [Configuration](docs/configuration.md) — YAML schema, fields, and validation
 - [Architecture](docs/architecture.md) — system design and module breakdown
+- [Shell commands and scripts](docs/shell-commands.md) — shell runtime, `pulso exec`, dashboard console
 - [Hooks](docs/hooks.md) — lifecycle hooks and execution behavior
 - [Reload, Watch, and Cron](docs/reload-watch-cron.md) — automated process management
 - [Logging](docs/logging.md) — log storage, rotation, and reading

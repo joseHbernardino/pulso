@@ -64,6 +64,22 @@
     $("env-status").textContent = doc.exists ? "Arquivo carregado: " + doc.path : "Arquivo ainda não existe. Ele será criado ao salvar: " + doc.path;
     $("env-load").textContent = "Recarregar arquivo";
   }
+  // The shell runtime accepts a command line or an inline script, so the
+  // entrypoint stops being required and the script field appears.
+  function applyRuntimeShape() {
+    const shell = $("runtime").value === "shell";
+    $("script-field").hidden = !shell;
+    $("entrypoint").required = !shell || !$("script").value.trim();
+    $("entrypoint").placeholder = shell ? "docker compose up -d  ou  /srv/minha-api/start.sh" : "/srv/minha-api/app.py ou npm";
+    document.querySelector('label[for="application-entrypoint"]').textContent = shell ? "Comando ou script no servidor" : "Executável ou script";
+    document.getElementById("entrypoint-help").textContent = shell
+      ? "Uma linha de comando completa: canos, && e redirecionamentos funcionam. Um arquivo .sh é executado como script."
+      : "Informe apenas o programa ou arquivo. Coloque os parâmetros em Argumentos.";
+    $("interpreter").placeholder = shell ? "/bin/bash" : "/srv/minha-api/.venv/bin/python";
+  }
+  $("runtime").addEventListener("change", applyRuntimeShape);
+  $("script").addEventListener("input", applyRuntimeShape);
+
   function reset() {
     generation++;
     originalEnvText = "";
@@ -81,6 +97,7 @@
     $("restart-now").hidden = true;
     $("title").textContent = "Nova aplicação";
     $("description").textContent = "Inicie um programa e configure seu ambiente neste servidor.";
+    applyRuntimeShape();
     clearError(); notice(""); setBusy(false);
   }
   function closeForm() {
@@ -129,6 +146,9 @@
       $("cwd").value = config.cwd || "";
       $("args").value = (launch.args || []).join("\n");
       $("interpreter").value = launch.interpreter || "";
+      $("script").value = launch.script || "";
+      applyRuntimeShape();
+      if (launch.script) $("options").open = true;
       $("env").value = Object.entries(config.env || {}).map(([key, value]) => key + "=" + value).join("\n");
       originalEnvText = $("env").value;
       $("restart").value = config.autorestart === false ? "never" : config.restart_policy || "on-failure";
@@ -178,6 +198,7 @@
     $("name").value = suggestion.name; $("runtime").value = suggestion.runtime;
     $("entrypoint").value = suggestion.entrypoint; $("cwd").value = suggestion.cwd;
     $("args").value = (suggestion.args || []).join("\n"); $("interpreter").value = suggestion.interpreter || "";
+    applyRuntimeShape();
     $("env-path").value = envFile; envDocument = null;
     $("env-content").value = ""; $("env-content").disabled = true;
     $("env-load").textContent = "Carregar arquivo";
@@ -191,7 +212,7 @@
   $("example").addEventListener("click", () => {
     $("name").value = "demonstracao-web"; $("runtime").value = "process";
     $("entrypoint").value = "sleep"; $("args").value = "3600";
-    $("env-path").value = ""; $("restart").value = "never";
+    $("env-path").value = ""; $("restart").value = "never"; $("script").value = ""; applyRuntimeShape();
     $("options").open = true; envDocument = null; $("env-content").value = ""; $("env-content").disabled = true;
     $("env-status").textContent = "O exemplo não precisa de um arquivo .env.";
     changed(); $("name").focus();
@@ -205,12 +226,14 @@
     try {
       const path = $("env-path").value.trim(), cwd = $("cwd").value.trim();
       if (path && (!envDocument || envDocument.inputPath !== path || envDocument.cwd !== cwd)) throw new Error("Carregue o arquivo .env deste caminho e pasta antes de salvar.");
+      if ($("runtime").value === "shell" && !$("entrypoint").value.trim() && !$("script").value.trim()) throw new Error("Escreva um comando ou um script shell.");
       const launch = config.launch || config;
       payload = { ...config, name: $("name").value.trim(), runtime: $("runtime").value,
         entrypoint: $("entrypoint").value.trim(), cwd, env_file: path,
         args: $("args").value.split(/\r?\n/).filter(line => line.trim() !== ""),
         env: editing && $("env").value === originalEnvText ? config.env : parseEnvironment($("env").value), restart_policy: $("restart").value, autorestart: $("restart").value !== "never",
-        interpreter: $("interpreter").value.trim(), use_bundle: !!launch.use_bundle, revision };
+        interpreter: $("interpreter").value.trim(), use_bundle: !!launch.use_bundle, revision,
+        script: $("runtime").value === "shell" ? $("script").value : "" };
       if (path && envDocument) { payload.env_content = $("env-content").value; payload.env_revision = envDocument.revision; }
     } catch (err) { showError(err.message, err.issue); return; }
     setBusy(true);

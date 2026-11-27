@@ -10,6 +10,7 @@ Welcome to the Pulso documentation. Pulso is a modern process manager and applic
 | [CLI Reference](cli-reference.md)                   | Full command reference with all flags and examples              |
 | [Configuration](configuration.md)                   | YAML schema, all fields, validation rules, and examples         |
 | [Architecture](architecture.md)                     | System design, supervisor, runtime adapters, daemon, storage    |
+| [Shell commands and scripts](shell-commands.md)     | Shell runtime, `pulso exec`, dashboard console, and their rules |
 | [Hooks](hooks.md)                                   | Lifecycle hooks, examples, execution behavior, failure handling |
 | [Reload, Watch, and Cron](reload-watch-cron.md)     | How each system works with configuration and best practices     |
 | [Logging](logging.md)                               | Log storage, reading, rotation, and file structure              |

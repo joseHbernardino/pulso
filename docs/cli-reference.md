@@ -34,7 +34,7 @@ pulso start dev --runtime bun
 | ------------------ | ----- | ----------------------- | ------------------------------------------------------------------------ |
 | `--only`           |       |                         | Start only specific processes by name (comma-separated, requires config) |
 | `--name`           | `-n`  | entrypoint filename     | Process name                                                             |
-| `--runtime`        | `-r`  | auto-detect             | Runtime: `go`, `python`, `node`, `bun`, `deno`, `ruby`, `php`, `auto`    |
+| `--runtime`        | `-r`  | auto-detect             | Runtime: `go`, `python`, `node`, `bun`, `deno`, `ruby`, `php`, `shell`, `auto` |
 | `--cwd`            | `-d`  | current directory       | Working directory                                                        |
 | `--env`            | `-e`  |                         | Environment variable (`KEY=VAL`, repeatable)                             |
 | `--watch`          | `-w`  | `false`                 | Watch for file changes and auto-restart                                  |
@@ -45,6 +45,8 @@ pulso start dev --runtime bun
 | `--instances`      |       | `1`                     | Number of instances to start                                             |
 | `--namespace`      |       |                         | Process namespace                                                        |
 | `--use-bundle`     |       | `false`                 | Wrap entrypoint with `bundle exec` (Ruby)                                |
+| `--script`         |       |                         | Inline shell script to supervise (implies `--runtime shell`)             |
+| `--shell`          |       | bash, else sh           | Interpreter for `--runtime shell`                                        |
 
 **Examples:**
 
@@ -63,7 +65,21 @@ pulso start main.go --runtime go --restart-policy always --max-restarts 5
 
 # Start with a custom working directory
 pulso start app.py --cwd /path/to/project
+
+# Start a shell command line: pipes and operators are preserved
+pulso start --runtime shell "node server.js | tee -a /var/log/app.log"
+
+# Start a .sh file, passing its own arguments after --
+pulso start --runtime shell /srv/minha-api/start.sh -- --port 8080
+
+# Supervise an inline script, with no entrypoint
+pulso start --name backup --script 'pg_dump app | gzip > /bak/app.sql.gz'
 ```
+
+With `--runtime shell` the entrypoint is handed to a shell instead of being
+executed directly, so a quoted command string is kept whole rather than split
+into a program and its arguments. See
+[Shell commands and scripts](shell-commands.md).
 
 ### `pulso stop`
 
@@ -234,6 +250,45 @@ pulso inspect api-server
 | `--format` | `-f`  | `table` | Output format: `table`, `json`                 |
 | `--logs`   |       | `20`    | Number of recent log lines to include          |
 | `--tui`    |       | `false` | Open interactive TUI control panel for process |
+
+## Commands
+
+### `pulso exec`
+
+Run a one-off command or script through a shell, stream its output, and exit
+with the command's own status.
+
+```bash
+pulso exec "docker ps --format '{{.Names}}' | sort"
+pulso exec --file /srv/minha-api/deploy.sh
+cat deploy.sh | pulso exec --file -
+pulso exec 'echo "ambiente: $1"' production
+pulso exec --app api "rails db:migrate"
+pulso exec --output json "uptime"
+```
+
+**Flags:**
+
+| Flag         | Short | Default        | Description                                             |
+| ------------ | ----- | -------------- | ------------------------------------------------------- |
+| `--cwd`      |       | current folder | Working directory                                       |
+| `--env`      | `-e`  |                | Environment variable (`NAME=value`, repeatable)         |
+| `--env-file` |       |                | Dotenv file loaded before `--env`                       |
+| `--shell`    |       | bash, else sh  | Interpreter                                             |
+| `--file`     | `-f`  |                | Read the script from a file, or `-` for standard input  |
+| `--timeout`  |       | `1m`           | Kill the command after this long (ceiling: `30m`)       |
+| `--app`      |       |                | Borrow an application's directory, environment and .env |
+| `--quiet`    | `-q`  | `false`        | Do not stream the output                                |
+| `--output`   | `-o`  | `text`         | Output format: `text` or `json`                         |
+
+The first argument is the command; the rest become its positional parameters
+(`"$1"`, `"$2"`, `"$@"`). With `--app`, an explicit `--cwd` or `--env` wins
+over the application's own values. `--dry-run` prints the resolved directory
+and command without running it. A command that reaches its timeout has its
+whole process group ended.
+
+**Exit code:** the command's own. A failure to start the command at all is
+reported as a Pulso error with exit code 1.
 
 ## Persistence
 
@@ -652,6 +707,11 @@ If a prefix matches multiple processes, the command fails with an ambiguity erro
 | -------------- | ------------------------------------------------------------------------------------- |
 | `PULSO_*`      | Any config field can be set via `PULSO_` prefix (e.g., `PULSO_DAEMON_LOGLEVEL=debug`) |
 | `PULSO_CONFIG` | Path to config file (set by CLI when forking daemon)                                  |
+| `PULSO_SHELL`  | Interpreter for the shell runtime, `pulso exec` and the console (default: bash, else sh) |
+
+Pulso also sets two variables in every command it runs through a shell:
+`PULSO=true` always, and `PULSO_EXEC=true` for a one-off command, so a script
+can tell whether it was invoked by the console or by the supervisor.
 
 ## Exit Codes
 
@@ -660,3 +720,6 @@ If a prefix matches multiple processes, the command fails with an ambiguity erro
 | `0`  | Success             |
 | `1`  | General error       |
 | `2`  | Command usage error |
+
+`pulso exec` is the exception: it exits with the status of the command it ran,
+so it composes with shell conditionals and CI steps.

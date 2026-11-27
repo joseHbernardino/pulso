@@ -209,6 +209,28 @@ processes:
       PORT: "9090"
       MODE: "shared"
 
+  # Shell runtime: the command is handed to a shell, so pipes, && and
+  # redirections work. Never auto-detected — always requested explicitly.
+  # Aliases: bash, sh, zsh, ksh, script. See docs/shell-commands.md.
+  - name: "api-com-log"
+    runtime: "shell"
+    entrypoint: "node server.js 2>&1 | tee -a /var/log/api.log"
+    cwd: "/srv/minha-api"
+    restart_policy: "always"
+
+  # An inline script needs no entrypoint. Arguments become "$1", "$2", "$@".
+  # The interpreter field chooses the shell (default: bash, else sh).
+  - name: "nightly-backup"
+    runtime: "shell"
+    interpreter: "/bin/bash"
+    script: |
+      set -euo pipefail
+      pg_dump "$DATABASE_URL" | gzip > /bak/app-$(date +%F).sql.gz
+      find /bak -name 'app-*.sql.gz' -mtime +14 -delete
+    cwd: "/srv/minha-api"
+    restart_policy: "never"
+    cron_restart: "0 3 * * *"
+
 cron:
   - name: "cleanup"
     schedule: "0 2 * * *"

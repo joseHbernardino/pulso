@@ -21,6 +21,7 @@ var webEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func prepareWebProcess(cfg types.ProcessConfig) (types.ProcessConfig, error) {
 	cfg.Name = strings.TrimSpace(cfg.Name)
 	cfg.Entrypoint = strings.TrimSpace(cfg.Entrypoint)
+	cfg.Script = strings.TrimRight(cfg.Script, " \t\r\n")
 	if !webProcessName.MatchString(cfg.Name) {
 		return cfg, fmt.Errorf("use a process name starting with a letter or number, followed by letters, numbers, dots, underscores, colons or hyphens")
 	}
@@ -54,7 +55,16 @@ func prepareWebProcess(cfg types.ProcessConfig) (types.ProcessConfig, error) {
 	if err != nil {
 		return cfg, err
 	}
-	cfg.Launch = &types.LaunchConfig{Runtime: cfg.Runtime, Entrypoint: cfg.Entrypoint, Args: cfg.Args, Interpreter: cfg.Interpreter, UseBundle: cfg.UseBundle}
+	cfg.Launch = &types.LaunchConfig{Runtime: cfg.Runtime, Entrypoint: cfg.Entrypoint, Args: cfg.Args, Interpreter: cfg.Interpreter, UseBundle: cfg.UseBundle, Script: cfg.Script}
+	// An inline script is a shell script whatever the form said, and a shell
+	// alias such as "bash" means the shell runtime.
+	cfg.Runtime = runtime.NormalizeName(cfg.Runtime)
+	if cfg.Script != "" && (cfg.Runtime == "" || cfg.Runtime == "auto" || cfg.Runtime == "process") {
+		cfg.Runtime = "shell"
+	}
+	if cfg.Runtime == "shell" {
+		cfg.Launch.Runtime = "shell"
+	}
 	if cfg.Runtime == "auto" {
 		switch strings.ToLower(filepath.Ext(cfg.Entrypoint)) {
 		case ".py":
@@ -87,6 +97,7 @@ func prepareWebProcess(cfg types.ProcessConfig) (types.ProcessConfig, error) {
 		Env:         cfg.Env,
 		Interpreter: cfg.Interpreter,
 		UseBundle:   cfg.UseBundle,
+		Script:      cfg.Script,
 	})
 	if err != nil {
 		return cfg, err

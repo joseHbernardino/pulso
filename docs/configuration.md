@@ -299,8 +299,9 @@ Each entry in the `processes` list defines a managed process.
 | Field             | Type        | Required | Default         | Description                                                           |
 | ----------------- | ----------- | -------- | --------------- | --------------------------------------------------------------------- |
 | `name`            | string      | **Yes**  |                 | Unique process name                                                   |
-| `entrypoint`      | string      | **Yes**  |                 | File path or command to execute                                       |
-| `runtime`         | string      | No       | auto-detect     | Runtime: `go`, `python`, `node`, `bun`, `deno`, `ruby`, `php`, `auto` |
+| `entrypoint`      | string      | **Yes**\*  |                 | File path or command to execute                                       |
+| `script`          | string      | No       |                 | Inline shell script; implies `runtime: shell` and makes `entrypoint` optional |
+| `runtime`         | string      | No       | auto-detect     | Runtime: `go`, `python`, `node`, `bun`, `deno`, `ruby`, `php`, `shell`, `auto` |
 | `args`            | string list | No       | `[]`            | Arguments passed after the entrypoint                                 |
 | `cwd`             | string      | No       | config file dir | Working directory for the process                                     |
 | `env_file`        | string      | No       |                 | Dotenv file, absolute or relative to process cwd                      |
@@ -328,6 +329,8 @@ Each entry in the `processes` list defines a managed process.
 | `cpu_quota`       | string      | No       |                 | CPU limit (e.g., `"50%"`)                                             |
 | `memory_limit`    | string      | No       |                 | Memory limit (e.g., `"512MB"`)                                        |
 | `log_max_files`   | int         | No       |                 | Max rotated log files to keep                                         |
+
+\* `entrypoint` is required unless `script` is set, which is itself the program.
 
 ### Field Details
 
@@ -380,9 +383,13 @@ Declares which runtime adapter to use. When omitted, Pulso auto-detects based on
 | `deno`   | `deno.json`, `deno.jsonc`                                           |
 | `ruby`   | `Gemfile`, `Gemfile.lock`                                           |
 | `php`    | `composer.json`, `artisan`, `*.php`                                 |
+| `shell`  | Never auto-detected — always requested explicitly                   |
 | `auto`   | Detect using order above (first match wins)                         |
 
-Detection order: **Go → Python → Node → Bun → Deno → Ruby → PHP**.
+Detection order: **Go → Python → Node → Bun → Deno → Ruby → PHP**. The shell
+runtime is excluded from detection on purpose: a project that happens to carry
+a `start.sh` is still a Node or Python project. `bash`, `sh`, `zsh`, `ksh` and
+`script` are accepted as aliases for `shell`.
 
 When `runtime` is set explicitly, detection is skipped entirely.
 
@@ -668,6 +675,42 @@ namespace/name:index
   entrypoint: "./cmd/api"
   args: ["--port", "8080"]
 ```
+
+### Shell
+
+**Detection:** none — `runtime: shell` (or `bash`, `sh`, `zsh`, `ksh`,
+`script`) is always explicit.
+
+**Entrypoint behavior:**
+
+| Input                              | Command                                      |
+| ---------------------------------- | -------------------------------------------- |
+| `script: \|` (inline)               | `<shell> -c "<script>" pulso <args...>`      |
+| `entrypoint: "/srv/api/start.sh"`  | `<shell> /srv/api/start.sh <args...>`        |
+| `entrypoint: "node app.js \| tee l"` | `<shell> -c "node app.js \| tee l" pulso`     |
+
+A path with a shell extension (`.sh`, `.bash`, `.ksh`, `.zsh`), or an existing
+file reached by path, is run as a script file. Anything else is a command
+line, with `args` shell-quoted and appended to it. With `script`, `args`
+become the positional parameters `"$1"`, `"$2"`, `"$@"`.
+
+**Interpreter:** `interpreter` names the shell; otherwise `PULSO_SHELL`, then
+`bash` when installed, then `sh`. No login profile is loaded, so the command
+behaves the same from the panel, the CLI and cron.
+
+```yaml
+- name: "nightly-backup"
+  runtime: "shell"
+  script: |
+    set -euo pipefail
+    pg_dump "$DATABASE_URL" | gzip > /bak/app-$(date +%F).sql.gz
+  cwd: "/srv/minha-api"
+  restart_policy: "never"
+  cron_restart: "0 3 * * *"
+```
+
+See [Shell commands and scripts](shell-commands.md) for the full picture,
+including one-off execution.
 
 ### Python
 

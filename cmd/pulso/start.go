@@ -34,6 +34,8 @@ func newStartCmd() *cobra.Command {
 		instances   int
 		namespace   string
 		useBundle   bool
+		script      string
+		shellBinary string
 	)
 
 	cmd := &cobra.Command{
@@ -44,21 +46,55 @@ func newStartCmd() *cobra.Command {
 With no arguments, starts all processes defined in pulso.yaml (with autostart: true).
 Use --only to start specific processes by name (comma-separated).
 
-Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps, Deno apps, Ruby apps, and PHP apps.`,
+Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps, Deno apps, Ruby apps, and PHP apps.
+
+With --runtime shell the entrypoint is a full shell command line, so pipes,
+conditionals and redirections work:
+
+  pulso start --runtime shell "node server.js | tee -a /var/log/app.log"
+
+With --script the process is an inline shell script, and no entrypoint is
+needed:
+
+  pulso start --name backup --script 'pg_dump app | gzip > /bak/app.sql.gz'
+
+A .sh file is run as a script by the shell runtime:
+
+  pulso start --runtime shell /srv/minha-api/start.sh`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// No args: start all from config file.
-			if len(args) == 0 {
+			runtimeName = runtime.NormalizeName(runtimeName)
+			shellRequested := runtimeName == "shell" || script != ""
+
+			// No args and no inline script: start everything in the config
+			// file. An inline script is itself the program, so it never means
+			// "start the config file".
+			if len(args) == 0 && script == "" {
+				if shellRequested {
+					return fmt.Errorf("--runtime shell needs a command line, a .sh file, or --script")
+				}
 				configPath := resolveConfigPath(cmd)
 				return startAllFromConfig(onlyFlag, configPath)
 			}
 
-			entrypoint := args[0]
-			extraArgs := args[1:]
+			entrypoint := ""
+			var extraArgs []string
+			if len(args) > 0 {
+				entrypoint = args[0]
+				extraArgs = args[1:]
+			}
+			if script != "" && entrypoint != "" {
+				// The script is the program; a positional argument alongside
+				// it would silently be ignored.
+				extraArgs = args
+				entrypoint = ""
+			}
 
 			// When the entrypoint is a quoted command string like "bun dev",
-			// split it into binary + args (pm2-style).
-			if len(extraArgs) == 0 && strings.Contains(entrypoint, " ") {
+			// split it into binary + args (pm2-style). A shell command line is
+			// left whole: splitting it would lose the pipes and operators that
+			// are the reason for asking for a shell.
+			if !shellRequested && len(extraArgs) == 0 && strings.Contains(entrypoint, " ") {
 				parts, err := splitShellArgs(entrypoint)
 				if err != nil {
 					return fmt.Errorf("failed to parse command: %w", err)
@@ -70,7 +106,11 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 			}
 
 			if name == "" {
-				name = filepath.Base(entrypoint)
+				if shellRequested {
+					name = shellProcessName(script, entrypoint)
+				} else {
+					name = filepath.Base(entrypoint)
+				}
 			}
 			cwd := workingDir
 			if cwd == "" {
@@ -80,6 +120,9 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 			// Resolve runtime.
 			resolvedRuntime := runtimeName
 			detector := runtime.NewDetector()
+			if shellRequested {
+				resolvedRuntime = "shell"
+			}
 			if resolvedRuntime == "" || resolvedRuntime == "auto" {
 				// First, check if the entrypoint itself is a known runtime binary.
 				// This handles cases like "bun dev", "node server.js", "python app.py".
@@ -108,12 +151,17 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 			finalArgs := extraArgs
 			if rt, err := detector.Get(resolvedRuntime); err == nil {
 				resolvedCmd, cmdErr := rt.StartCmd(runtime.StartOptions{
-					Entrypoint: entrypoint,
-					Args:       extraArgs,
-					Cwd:        cwd,
-					Env:        parseEnvs(envVars),
-					UseBundle:  useBundle,
+					Entrypoint:  entrypoint,
+					Args:        extraArgs,
+					Cwd:         cwd,
+					Env:         parseEnvs(envVars),
+					UseBundle:   useBundle,
+					Script:      script,
+					Interpreter: shellBinary,
 				})
+				if cmdErr != nil && shellRequested {
+					return cmdErr
+				}
 				if cmdErr == nil && resolvedCmd != nil {
 					finalEntrypoint = resolvedCmd.Path
 					if len(resolvedCmd.Args) > 1 {
@@ -129,6 +177,9 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 				_, _ = fmt.Fprintf(os.Stdout, "  args:       %v\n", finalArgs)
 				_, _ = fmt.Fprintf(os.Stdout, "  cwd:        %s\n", cwd)
 				_, _ = fmt.Fprintf(os.Stdout, "  instances:  %d\n", instances)
+				if script != "" {
+					_, _ = fmt.Fprintf(os.Stdout, "  script:\n%s\n", script)
+				}
 				return nil
 			}
 
@@ -137,12 +188,23 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 				Runtime:       resolvedRuntime,
 				Entrypoint:    finalEntrypoint,
 				Args:          finalArgs,
+				Script:        script,
 				Cwd:           cwd,
 				Env:           parseEnvs(envVars),
 				RestartPolicy: types.RestartPolicy(restartPol),
 				MaxRestarts:   maxRestarts,
 				Instances:     instances,
 				Namespace:     namespace,
+			}
+
+			if shellRequested {
+				cfg.Launch = &types.LaunchConfig{
+					Runtime:     "shell",
+					Entrypoint:  entrypoint,
+					Args:        extraArgs,
+					Interpreter: shellBinary,
+					Script:      script,
+				}
 			}
 
 			if watch {
@@ -210,7 +272,7 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 
 	cmd.Flags().StringVar(&onlyFlag, "only", "", "start only specific processes by name (comma-separated, requires config file)")
 	cmd.Flags().StringVarP(&name, "name", "n", "", "process name (default: entrypoint filename)")
-	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "", "runtime: go, python, node, bun, deno, ruby, php, auto (default: auto-detect)")
+	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "", "runtime: go, python, node, bun, deno, ruby, php, shell, auto (default: auto-detect)")
 	cmd.Flags().StringVarP(&workingDir, "cwd", "d", "", "working directory (default: current)")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "environment variables (KEY=VAL, repeatable)")
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for file changes and auto-restart")
@@ -221,6 +283,8 @@ Supports Go binaries/scripts, Python scripts, Node.js/TypeScript apps, Bun apps,
 	cmd.Flags().IntVar(&instances, "instances", 1, "number of instances to start")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "process namespace")
 	cmd.Flags().BoolVar(&useBundle, "use-bundle", false, "wrap entrypoint with bundle exec (Ruby)")
+	cmd.Flags().StringVar(&script, "script", "", "inline shell script to supervise (implies --runtime shell)")
+	cmd.Flags().StringVar(&shellBinary, "shell", "", "interpreter for --runtime shell (default: bash when installed, else sh)")
 
 	return cmd
 }
@@ -302,4 +366,73 @@ func getSupervisor() (*supervisor.Supervisor, error) {
 
 	log.Debug().Str("log_dir", opts.LogDir).Msg("creating supervisor")
 	return supervisor.New(opts), nil
+}
+
+// shellNoiseWords are the leading words that say nothing about what a script
+// does, so they never become its name.
+var shellNoiseWords = map[string]bool{
+	"set": true, "export": true, "cd": true, "source": true, ".": true,
+	"umask": true, "shopt": true, "trap": true, "ulimit": true, "unset": true,
+	"readonly": true, "local": true, "declare": true, "eval": true,
+	"if": true, "then": true, "else": true, "elif": true, "fi": true,
+	"while": true, "until": true, "for": true, "do": true, "done": true,
+	"case": true, "esac": true, "function": true, "exec": true, "echo": true,
+}
+
+// shellProcessName derives a process name from an inline script or a command
+// line, so that `--script` does not also require `--name`. It takes the first
+// word that actually names a program, skipping assignments, redirections and
+// shell keywords, the way a person reading the script would.
+func shellProcessName(script, entrypoint string) string {
+	source := script
+	if strings.TrimSpace(source) == "" {
+		source = entrypoint
+	}
+	fallback := ""
+	for _, line := range strings.Split(source, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		for _, field := range strings.Fields(line) {
+			// Skip a leading variable assignment such as `ENV=production cmd`.
+			if strings.Contains(field, "=") || strings.HasPrefix(field, "-") {
+				continue
+			}
+			name := sanitizeProcessName(filepath.Base(field))
+			if name == "" {
+				break
+			}
+			if shellNoiseWords[strings.ToLower(name)] {
+				// Remember it: a script that only echoes is still better
+				// named "echo" than "shell".
+				if fallback == "" {
+					fallback = name
+				}
+				break
+			}
+			return name
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "shell"
+}
+
+// sanitizeProcessName keeps only the characters a process name accepts, and
+// returns "" when nothing usable is left.
+func sanitizeProcessName(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			out.WriteRune(r)
+		case r == '.' || r == '_' || r == '-' || r == ':':
+			if out.Len() > 0 {
+				out.WriteRune(r)
+			}
+		}
+	}
+	return strings.Trim(out.String(), "._-:")
 }

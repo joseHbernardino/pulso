@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -22,6 +23,7 @@ func NewDetector() *Detector {
 			&DenoRuntime{},
 			&RubyRuntime{},
 			&PHPRuntime{},
+			&ShellRuntime{},
 		},
 	}
 	log.Debug().Int("count", len(d.runtimes)).Msg("detector initialized with runtimes")
@@ -39,8 +41,31 @@ func (d *Detector) Detect(dir string) (Runtime, error) {
 	return nil, fmt.Errorf("no runtime detected in %q", dir)
 }
 
-// Get looks up a runtime by name (e.g. "go", "python", "node", "bun").
+// ShellAliases are the names that select the shell runtime. They let a
+// configuration say `runtime: bash` and mean the same thing as `shell`.
+var ShellAliases = map[string]string{
+	"shell":  "shell",
+	"sh":     "shell",
+	"bash":   "shell",
+	"zsh":    "shell",
+	"ksh":    "shell",
+	"script": "shell",
+}
+
+// NormalizeName maps a runtime alias to its canonical name. Unknown names are
+// returned unchanged so that Get still reports them as unknown.
+func NormalizeName(name string) string {
+	lowered := strings.ToLower(strings.TrimSpace(name))
+	if canonical, ok := ShellAliases[lowered]; ok {
+		return canonical
+	}
+	return lowered
+}
+
+// Get looks up a runtime by name (e.g. "go", "python", "node", "bun",
+// "shell"). Shell aliases such as "bash" resolve to the shell runtime.
 func (d *Detector) Get(name string) (Runtime, error) {
+	name = NormalizeName(name)
 	for _, r := range d.runtimes {
 		if r.Name() == name {
 			return r, nil

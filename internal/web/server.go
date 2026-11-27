@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,12 @@ type Server struct {
 	notifyStore     *notify.Store
 	notifier        *notify.Dispatcher
 	hub             *WSHub
+
+	// execSlots bounds how many console commands run at once, and
+	// execRunning lets the console stop one that is still streaming.
+	execSlots   chan struct{}
+	execMu      sync.Mutex
+	execRunning map[string]context.CancelFunc
 
 	loginMu       sync.Mutex
 	deployMu      sync.Mutex
@@ -96,6 +103,8 @@ func NewServerWithAuth(sup *supervisor.Supervisor, listen string, authenticator 
 		auth:          authenticator,
 		sessions:      sessions,
 		hub:           NewWSHub(),
+		execSlots:     make(chan struct{}, maxConcurrentExec),
+		execRunning:   make(map[string]context.CancelFunc),
 		loginFailures: make(map[string][]time.Time),
 	}
 	if dir := os.Getenv("PULSO_UPDATE_DIR"); dir != "" {
@@ -136,7 +145,9 @@ func (s *Server) handler() (http.Handler, error) {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	// The console streams for as long as its command runs, so it is the one
+	// route the request timeout must not cut off.
+	r.Use(timeoutExcept(30*time.Second, "/api/v1/exec"))
 	// A auditoria envolve a autenticação e a autorização, para que também as
 	// requisições recusadas por sessão ausente (401) ou por papel (403)
 	// fiquem registradas. Ela resolve a sessão por conta própria, sem depender
@@ -152,6 +163,7 @@ func (s *Server) handler() (http.Handler, error) {
 	r.Get("/users", s.handleUsersPage)
 	r.Get("/projects", s.handleContainerPage)
 	r.Get("/processes", s.handleProcessPage)
+	r.Get("/console", s.handleConsolePage)
 	r.Get("/", s.handleHomePage)
 	r.Post("/api/auth/login", s.handleLoginAPI)
 	r.Post("/api/auth/logout", s.handleLogoutAPI)
@@ -170,6 +182,8 @@ func (s *Server) handler() (http.Handler, error) {
 		r.Get("/processes/{id}/logs", s.handleGetLogs)
 		r.Get("/processes/{id}/settings", s.handleGetSettings)
 		r.Patch("/processes/{id}/settings", s.handleUpdateSettings)
+		r.Post("/exec", s.handleExecCommand)
+		r.Post("/exec/{id}/stop", s.handleStopExecCommand)
 		r.Post("/env-files/preview", s.handlePreviewEnv)
 		r.Post("/filesystem/browse", s.handleBrowsePaths)
 		r.Post("/projects/inspect", s.handleInspectProject)
@@ -371,3 +385,22 @@ func summarizeProcesses(procs []types.ProcessInfo) []wsProcessSummary {
 
 // Ensure websocket import is used.
 var _ = websocket.CloseGoingAway
+
+// timeoutExcept applies the request timeout to every route except the ones
+// whose path starts with one of the given prefixes. A streaming endpoint
+// needs the request to stay alive while it writes.
+func timeoutExcept(duration time.Duration, prefixes ...string) func(http.Handler) http.Handler {
+	timeout := middleware.Timeout(duration)
+	return func(next http.Handler) http.Handler {
+		bounded := timeout(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(r.URL.Path, prefix) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			bounded.ServeHTTP(w, r)
+		})
+	}
+}

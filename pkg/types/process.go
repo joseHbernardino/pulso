@@ -47,6 +47,9 @@ type LaunchConfig struct {
 	Args        []string `json:"args,omitempty" yaml:"args,omitempty"`
 	Interpreter string   `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
 	UseBundle   bool     `json:"use_bundle,omitempty" yaml:"use_bundle,omitempty"`
+	// Script is the inline shell script, kept so the dashboard can show and
+	// edit what was written instead of the resolved `sh -c` invocation.
+	Script string `json:"script,omitempty" yaml:"script,omitempty"`
 }
 
 // ProcessConfig holds the configuration for a managed process.
@@ -60,6 +63,10 @@ type ProcessConfig struct {
 	Cwd         string            `json:"cwd" yaml:"cwd"`
 	Env         map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	Interpreter string            `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
+	// Script is an inline shell script run by the shell runtime. When it is
+	// set the entrypoint is optional, and Args become the script's positional
+	// parameters.
+	Script string `json:"script,omitempty" yaml:"script,omitempty"`
 	// UseBundle wraps the entrypoint with "bundle exec" (primarily Ruby).
 	UseBundle     bool              `json:"use_bundle,omitempty" yaml:"use_bundle,omitempty"`
 	RestartPolicy RestartPolicy     `json:"restart_policy" yaml:"restart_policy"`
@@ -113,7 +120,7 @@ func (c *ProcessConfig) Validate() error {
 	if c.Name == "" {
 		return fmt.Errorf("process name is required")
 	}
-	if c.Entrypoint == "" {
+	if c.Entrypoint == "" && c.Script == "" {
 		return fmt.Errorf("entrypoint is required for process %q", c.Name)
 	}
 	if c.RestartPolicy != "" &&

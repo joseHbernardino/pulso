@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"pulso.local/pulso/internal/httputil"
+	"pulso.local/pulso/internal/runtime"
 	"pulso.local/pulso/pkg/types"
 )
 
@@ -147,7 +148,14 @@ func (s *Server) prepareProcess(cfg types.ProcessConfig) (types.ProcessConfig, e
 	if err != nil {
 		return cfg, err
 	}
-	for _, value := range []*string{&cfg.Entrypoint, &cfg.Interpreter} {
+	// A shell command line is not a path: translating it would rewrite words
+	// inside the command. Only a script file is translated.
+	shellRequested := runtime.NormalizeName(cfg.Runtime) == "shell" || cfg.Script != ""
+	translate := []*string{&cfg.Entrypoint, &cfg.Interpreter}
+	if shellRequested && !runtime.IsShellScriptFile(cfg.Entrypoint, cfg.Cwd) {
+		translate = []*string{&cfg.Interpreter}
+	}
+	for _, value := range translate {
 		*value, err = s.paths.commandPath(*value)
 		if err != nil {
 			return cfg, err
@@ -175,7 +183,9 @@ func (s *Server) prepareProcess(cfg types.ProcessConfig) (types.ProcessConfig, e
 	if _, err = exec.LookPath(executable); err != nil {
 		return cfg, fmt.Errorf("programa ou interpretador: %w", err)
 	}
-	if cfg.Launch != nil && cfg.Runtime != "" && cfg.Runtime != "process" && cfg.Runtime != "unknown" {
+	// The shell runtime is checked by the shell itself: a command line has no
+	// file to stat, and a missing script is reported in the application log.
+	if cfg.Launch != nil && cfg.Runtime != "" && cfg.Runtime != "process" && cfg.Runtime != "unknown" && cfg.Runtime != "shell" {
 		source := cfg.Launch.Entrypoint
 		if !filepath.IsAbs(source) {
 			source = filepath.Join(cfg.Cwd, source)

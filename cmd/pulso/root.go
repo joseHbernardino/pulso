@@ -81,6 +81,7 @@ Manage processes through CLI, TUI, Web UI, or MCP interfaces.`,
 	root.AddCommand(newEventsCmd())
 	root.AddCommand(newReadyCmd())
 	root.AddCommand(newConfigReloadCmd())
+	root.AddCommand(newExecCmd())
 
 	return root
 }

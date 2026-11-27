@@ -14,6 +14,10 @@ type StartOptions struct {
 	Env         map[string]string
 	Interpreter string // optional override
 	UseBundle   bool   // wrap with bundle exec
+	// Script is an inline shell script. Only the shell runtime reads it; when
+	// it is set the entrypoint is ignored and Args become the script's
+	// positional parameters.
+	Script string
 }
 
 // Runtime abstracts language-specific process launching.

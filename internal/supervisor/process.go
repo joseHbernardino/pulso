@@ -17,6 +17,7 @@ import (
 	"pulso.local/pulso/internal/envfile"
 	"pulso.local/pulso/internal/healthcheck"
 	"pulso.local/pulso/internal/hooks"
+	"pulso.local/pulso/internal/runtime"
 	"pulso.local/pulso/pkg/types"
 )
 
@@ -791,6 +792,23 @@ func (p *ManagedProcess) waitUntilReady(ctx context.Context, timeout time.Durati
 
 // buildArgs constructs the command-line arguments from the process config.
 func buildArgs(cfg types.ProcessConfig) []string {
+	// A shell application declared in pulso.yaml reaches the supervisor
+	// unresolved: the config loader does not consult runtime adapters, so the
+	// command line or script is still a string here. Launch is set by the
+	// resolvers in the CLI and the panel, so a non-nil Launch means the
+	// entrypoint is already a program and must be left alone.
+	if cfg.Launch == nil && (cfg.Script != "" || runtime.NormalizeName(cfg.Runtime) == "shell") {
+		shell, args, err := runtime.ShellCommandLine(runtime.StartOptions{
+			Entrypoint:  cfg.Entrypoint,
+			Args:        cfg.Args,
+			Cwd:         cfg.Cwd,
+			Interpreter: cfg.Interpreter,
+			Script:      cfg.Script,
+		})
+		if err == nil {
+			return append([]string{shell}, args...)
+		}
+	}
 	if cfg.UseBundle {
 		interpreter := "ruby"
 		if cfg.Interpreter != "" {

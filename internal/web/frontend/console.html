@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="description" content="Pulso: execute comandos e scripts no servidor com registro de auditoria."><meta name="viewport" content="width=device-width,initial-scale=1"><title>Console · Pulso</title><meta name="theme-color" content="#153F46"><link rel="icon" href="/assets/pulso-mark.svg"><script src="/assets/theme.js"></script><link rel="stylesheet" href="/assets/brand.css"><link rel="stylesheet" href="/assets/dashboard.css"><link rel="stylesheet" href="/assets/applications.css"><link rel="stylesheet" href="/assets/console.css"><script src="/assets/shell.js" defer></script><script src="/assets/access.js" defer></script><script src="/assets/path-browser.js" defer></script><script src="/assets/console.js" defer></script></head>
+<body data-page="console"><a class="skip-link" href="#main-content">Pular para o conteúdo</a><button id="navigation-overlay" class="navigation-overlay" aria-label="Fechar navegação" tabindex="-1"></button><div class="app-shell"><aside id="app-sidebar" class="sidebar" aria-label="Menu do espaço de trabalho"></aside><div class="workspace-content"><header id="app-header" class="app-header"></header><main id="main-content" class="main-content">
+
+<div class="page-intro"><div><h1>Console</h1><p>Execute um comando ou um script bash neste servidor. Cada execução fica registrada na auditoria.</p></div></div>
+
+<p id="console-denied" class="console-denied" role="alert" hidden>O console exige uma conta de administrador. Com acesso de visualização é possível acompanhar as aplicações, mas não executar comandos.</p>
+
+<section class="panel console-panel" aria-labelledby="console-heading">
+  <div class="panel-heading"><div><h2 id="console-heading">Comando</h2><p>Linha de comando completa: canos, condicionais e redirecionamentos funcionam. Várias linhas são executadas como um script.</p></div></div>
+  <form id="console-form" autocomplete="off">
+    <div class="console-field">
+      <label for="console-command">Comando ou script</label>
+      <textarea id="console-command" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="docker ps --format '{{.Names}}' | sort" aria-describedby="console-command-help" required></textarea>
+      <p id="console-command-help">Ctrl+Enter executa. O comando roda com o usuário do Pulso, na pasta indicada abaixo.</p>
+    </div>
+
+    <div class="console-presets" role="group" aria-label="Comandos prontos">
+      <span>Comandos prontos:</span>
+      <button class="console-chip" type="button" data-command="df -h">Espaço em disco</button>
+      <button class="console-chip" type="button" data-command="free -m; uptime">Memória e carga</button>
+      <button class="console-chip" type="button" data-command="docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'">Contêineres</button>
+      <button class="console-chip" type="button" data-command="ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -15">Processos por CPU</button>
+      <button class="console-chip" type="button" data-command="ls -la">Listar a pasta</button>
+    </div>
+
+    <div class="console-grid">
+      <div class="console-field"><label for="console-cwd">Pasta de trabalho <span>(opcional)</span></label><div class="application-path-row"><input id="console-cwd" placeholder="/srv/minha-api" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-browse-path="console-cwd" aria-label="Selecionar pasta de trabalho">Selecionar</button></div></div>
+      <div class="console-field"><label for="console-app">Contexto</label><select id="console-app" aria-describedby="console-app-help"><option value="">Servidor (pasta acima)</option></select><p id="console-app-help">Uma aplicação empresta sua pasta, variáveis e .env.</p></div>
+      <div class="console-field"><label for="console-shell">Interpretador <span>(opcional)</span></label><input id="console-shell" placeholder="bash" spellcheck="false" autocomplete="off"></div>
+      <div class="console-field"><label for="console-timeout">Tempo limite</label><select id="console-timeout"><option value="60">1 minuto</option><option value="300" selected>5 minutos</option><option value="900">15 minutos</option><option value="1800">30 minutos</option></select></div>
+    </div>
+
+    <p id="console-error" class="application-error" role="alert" hidden></p>
+    <div id="application-path-guidance" class="path-guidance" hidden><h3>Como disponibilizar seus projetos</h3><p id="application-path-explanation"></p><div id="application-path-roots"></div><p id="application-path-action"></p></div>
+
+    <div class="console-actions">
+      <div class="console-history-wrap"><label class="sr-only" for="console-history">Histórico</label><select id="console-history"><option value="">Histórico de comandos…</option></select></div>
+      <div><button class="btn" type="button" id="console-stop" hidden>Parar comando</button><button class="btn btn-primary" type="submit" id="console-run">Executar</button></div>
+    </div>
+  </form>
+</section>
+
+<section class="panel console-output-panel" aria-labelledby="console-output-heading">
+  <div class="panel-heading">
+    <div><h2 id="console-output-heading">Saída</h2><p id="console-context">Nenhum comando executado nesta sessão.</p></div>
+    <div class="console-output-actions"><span id="console-state" class="console-state" role="status">pronto</span><button class="btn" type="button" id="console-copy">Copiar</button><button class="btn" type="button" id="console-download">Baixar</button><button class="btn" type="button" id="console-clear">Limpar</button></div>
+  </div>
+  <pre id="console-output" role="region" tabindex="0" aria-label="Saída do comando" aria-live="polite"></pre>
+  <div class="console-footnote"><span id="console-summary">A saída aparece aqui enquanto o comando executa.</span><span id="console-shell-info"></span></div>
+</section>
+
+</main><footer class="workspace-footer"><span><strong>Pulso</strong> &nbsp; Suas aplicações, sob controle.</span><span id="last-updated"></span></footer></div></div><div id="toast-container" role="status" aria-live="polite"></div>
+
+<dialog id="path-browser" aria-labelledby="path-browser-title" aria-describedby="path-browser-description">
+  <div class="application-heading"><div><h2 id="path-browser-title">Selecionar arquivo</h2><p id="path-browser-description">Arquivos disponíveis para esta instalação do Pulso.</p></div><button class="btn application-close" id="path-browser-close" type="button" aria-label="Fechar seleção">×</button></div>
+  <div class="path-browser-content"><p id="path-browser-context" class="path-browser-context"></p><div id="path-browser-roots" class="path-browser-roots" aria-label="Pastas de projetos"></div>
+    <form id="path-browser-form"><label for="path-browser-location">Pasta</label><div class="application-path-row"><input id="path-browser-location" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Abrir</button><button class="btn" type="button" id="path-browser-parent">Subir pasta</button></div></form>
+    <p id="path-browser-error" class="application-error" role="alert" hidden></p><p id="path-browser-status" role="status"></p><ul id="path-browser-entries" class="path-browser-entries" aria-label="Arquivos e pastas"></ul>
+    <button class="btn" type="button" id="path-browser-more" hidden>Carregar mais</button>
+    <div class="dialog-actions"><button class="btn" type="button" id="path-browser-cancel">Cancelar</button><button class="btn btn-primary" type="button" id="path-browser-use" hidden>Usar esta pasta</button></div>
+  </div>
+</dialog>
+
+</body></html>

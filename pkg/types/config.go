@@ -195,8 +195,12 @@ func (c *PulsoConfig) Validate() error {
 		}
 		seen[p.Name] = true
 		if p.Runtime != "" {
+			// The shell names mirror internal/runtime's aliases. They are
+			// repeated here because pkg/types is the dependency root and
+			// imports nothing from internal/.
 			validRuntimes := map[string]bool{
 				"go": true, "python": true, "node": true, "bun": true, "deno": true, "ruby": true, "php": true,
+				"shell": true, "sh": true, "bash": true, "zsh": true, "ksh": true, "script": true,
 				"auto": true, "unknown": true,
 			}
 			if !validRuntimes[p.Runtime] {
