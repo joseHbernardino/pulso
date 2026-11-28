@@ -10,7 +10,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
-	github.com/mark3labs/mcp-go v1.5.0
+	github.com/mark3labs/mcp-go v1.6.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/moby/patternmatcher v0.6.1
 	github.com/pelletier/go-toml/v2 v2.2.4
