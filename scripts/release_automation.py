@@ -152,7 +152,25 @@ class GitHub:
             raise RuntimeError(f"GitHub {method} {path}: HTTP {error.code}") from None
 
     def release(self, version):
-        return self.request("GET", "/releases/tags/" + urllib.parse.quote(version, safe=""))
+        found = self.request("GET", "/releases/tags/" + urllib.parse.quote(version, safe=""))
+        if found:
+            return found
+        # A draft release is not resolvable by tag: GitHub answers 404 for it
+        # even when the reserved tag already exists, so the lookup above only
+        # ever finds published releases. Publishing has to find the draft this
+        # workflow uploaded to, which means listing. Without this, every run
+        # stopped at "Create and upload the draft release before publishing"
+        # while its own finished draft sat there.
+        for page in range(1, 11):
+            listed = self.request("GET", f"/releases?per_page=100&page={page}")
+            if not listed:
+                return None
+            for candidate in listed:
+                if candidate.get("tag_name") == version:
+                    return candidate
+            if len(listed) < 100:
+                return None
+        return None
 
     def published(self, version):
         release = self.release(version)

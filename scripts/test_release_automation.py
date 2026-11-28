@@ -224,5 +224,77 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(github.patches)
 
 
+class ReleaseLookupTests(unittest.TestCase):
+    """The real GitHub.release, which every other test replaces with a stub.
+
+    Publishing has to find the draft the workflow uploaded to. GitHub answers
+    404 when a draft is requested by tag, even though the reserved tag exists,
+    so a lookup by tag alone never finds it and publishing stopped with
+    "Create and upload the draft release before publishing".
+    """
+
+    def github(self, by_tag=None, pages=()):
+        client = release.GitHub("Example/Pulso", "token")
+        calls = []
+
+        def request(method, path, data=None):
+            calls.append(path)
+            if path.startswith("/releases/tags/"):
+                return by_tag
+            if path.startswith("/releases?"):
+                page = int(path.rsplit("page=", 1)[1])
+                return list(pages[page - 1]) if page <= len(pages) else []
+            raise AssertionError(path)
+
+        client.request = request
+        return client, calls
+
+    def test_draft_is_found_by_listing(self):
+        draft = {"id": 7, "tag_name": "v0.2.3", "draft": True}
+        client, calls = self.github(pages=[[{"tag_name": "v0.2.1", "draft": False}, draft]])
+        self.assertEqual(client.release("v0.2.3"), draft)
+        self.assertEqual(calls, ["/releases/tags/v0.2.3", "/releases?per_page=100&page=1"])
+        self.assertFalse(client.published("v0.2.3"), "a draft is not published")
+
+    def test_published_release_needs_no_listing(self):
+        published = {"id": 7, "tag_name": "v0.2.1", "draft": False}
+        client, calls = self.github(by_tag=published)
+        self.assertEqual(client.release("v0.2.1"), published)
+        self.assertEqual(calls, ["/releases/tags/v0.2.1"])
+        self.assertTrue(client.published("v0.2.1"))
+
+    def test_draft_on_a_later_page_is_found(self):
+        draft = {"id": 9, "tag_name": "v0.2.3", "draft": True}
+        first = [{"tag_name": f"v0.1.{index}", "draft": False} for index in range(100)]
+        client, calls = self.github(pages=[first, [draft]])
+        self.assertEqual(client.release("v0.2.3"), draft)
+        self.assertEqual(len(calls), 3)
+
+    def test_unknown_version_is_absent(self):
+        client, _ = self.github(pages=[[{"tag_name": "v0.2.1", "draft": False}]])
+        self.assertIsNone(client.release("v9.9.9"))
+        self.assertFalse(client.published("v9.9.9"))
+
+    def test_publishing_reaches_a_draft_found_by_listing(self):
+        draft = {"id": 42, "tag_name": "v0.2.3", "draft": True,
+                 "assets": [{"name": name, "state": "uploaded", "size": 12}
+                            for name in release.required_assets("v0.2.3")]}
+        client, _ = self.github(pages=[[draft]])
+        patches = []
+        listing = client.request
+
+        def request(method, path, data=None):
+            if method == "GET" and path == "/releases/latest":
+                return {"tag_name": "v0.2.1"}
+            if method == "PATCH" and path == "/releases/42":
+                patches.append(data)
+                return draft
+            return listing(method, path, data)
+
+        client.request = request
+        self.assertIn("Published v0.2.3", release.publish_release("v0.2.3", client, Registry()))
+        self.assertEqual(patches, [{"draft": False, "prerelease": False, "make_latest": "true"}])
+
+
 if __name__ == "__main__":
     unittest.main()
