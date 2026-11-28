@@ -9,7 +9,7 @@ buildGoModule {
   pname = "pulso";
   inherit version src;
 
-  vendorHash = "sha256-lR4kGwOO4FUMxVd2shAeJYJKTGTDyVAOQWCUG7kf0to=";
+  vendorHash = "sha256-K0mBtabgN3IgskAuONULxXxI/mvVC4KJo/PrmmHKab4=";
 
   proxyVendor = true;
 
