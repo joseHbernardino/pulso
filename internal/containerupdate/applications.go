@@ -680,7 +680,31 @@ func (a *Agent) registerApplications(mux *http.ServeMux) error {
 			continue
 		}
 		if app.CandidateID != "" {
-			if _, e := a.ownedApplication(a.ctx, id, app.CandidateID); e == nil {
+			candidate, e := a.ownedApplication(a.ctx, id, app.CandidateID)
+			// A first deployment interrupted after its container was already
+			// running: the candidate IS the application, and the saved
+			// configuration is the one it was created from, because a new
+			// application carries it from the start. Removing it would
+			// destroy a container that is already serving, and nothing would
+			// ever bring it back — the application would simply vanish. That
+			// is what happened when the agent was replaced in the seconds
+			// between the container coming up and the deployment recording
+			// its success. Adopt it instead.
+			if e == nil && candidate.State.Running && app.ContainerID == "" {
+				app.ContainerID, app.CandidateID = app.CandidateID, ""
+				app.Phase, app.Error = "ready", ""
+				// Mirrors the success path: the image is present, so a later
+				// deployment must not be forced to pull again.
+				app.Config.Pull = false
+				if err = a.saveApplication(app); err != nil {
+					return err
+				}
+				continue
+			}
+			// Otherwise the candidate is unfinished work: a container that
+			// never came up, or a replacement whose configuration was never
+			// recorded. Discard it and fall back to the previous container.
+			if e == nil {
 				_ = a.engine.remove(a.ctx, app.CandidateID)
 			}
 		}
