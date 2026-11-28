@@ -1,4 +1,4 @@
-.PHONY: build test lint vet clean install fmt fmt-check vendor-hash
+.PHONY: build test lint vet clean install fmt fmt-check vendor-hash verify verify-full
 
 BINARY=pulso
 BUILD_DIR=./bin
@@ -23,6 +23,14 @@ fmt:
 
 fmt-check:
 	@! gofmt -l . | grep -q . || (echo "Files need formatting:"; gofmt -l .; exit 1)
+
+# Run everything CI runs that can run locally. Do this before publishing.
+verify:
+	sh scripts/verify.sh
+
+# Same, plus the slow Docker-backed checks
+verify-full:
+	sh scripts/verify.sh --full
 
 # Recompute the Nix vendorHash after a dependency change (requires Nix)
 vendor-hash:

@@ -49,6 +49,8 @@ sdk ← internal/supervisor, internal/runtime, pkg/types
 ## Commands
 
 ```bash
+make verify         # everything CI runs that can run locally — run before publishing
+make verify-full    # same, plus the slow Docker-backed checks
 make build          # → bin/pulso  (version + build-time via ldflags)
 make test           # go test -race -count=1 ./...
 make vet            # go vet ./...
@@ -56,6 +58,31 @@ make lint           # golangci-lint run ./...  (silently skipped if not installe
 make fmt            # gofmt -w . ./cmd ./internal ./pkg
 make clean          # rm -rf bin/
 ```
+
+`make verify` (`scripts/verify.sh`) mirrors the CI jobs in order: the release
+automation unit tests, `go mod verify`, build, `gofmt -s`, vet,
+golangci-lint, `-race` tests, E2E, the five cross builds, govulncheck, the
+Nix flake check and build, and the installer's shell lint. It ends with a
+report that names what it could **not** verify, so "passed" is never mistaken
+for "covered". Two gaps are permanent: the publish stage needs repository
+credentials, and anything requiring a tool that is not installed is listed as
+skipped rather than silently dropped.
+
+Three traps it exists to catch, each of which has already broken a release
+here:
+
+- **The pinned `vendorHash`.** Any change to `go.mod` or `go.sum` invalidates
+  it and `nix build .` fails with an unhelpful hash mismatch. With Nix
+  installed, `scripts/update-vendor-hash.sh` recomputes it; without Nix,
+  verify still fails the commit when the hash did not move with the modules.
+- **`gofmt -l -s`, not `gofmt -l`.** The `-s` simplifications are part of the
+  CI gate. Verify compares CRLF-normalized content, because a WSL or Windows
+  checkout can hold CRLF on disk while git stores LF — the file is fine in CI
+  and a plain local `gofmt -l` reports a false failure.
+- **Tool versions.** CI pins golangci-lint v2.15.0 and govulncheck v1.9.0 and
+  takes Go from `go.mod`. Verify reports a toolchain mismatch instead of
+  letting a newer local formatter or linter disagree with the gate. Point
+  `PULSO_GO` at the matching Go if it is not on the default path.
 
 ### Targeted test runs
 

@@ -24,6 +24,14 @@ test:
 vet:
     {{ go }} vet ./...
 
+# Run everything CI runs that can run locally. Do this before publishing.
+verify:
+    sh scripts/verify.sh
+
+# Same, plus the slow Docker-backed checks
+verify-full:
+    sh scripts/verify.sh --full
+
 # Run golangci-lint (skips if not installed)
 lint:
     @which golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || echo "golangci-lint not installed, skipping"
